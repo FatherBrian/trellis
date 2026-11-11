@@ -46,3 +46,4 @@ jobs:
         run: |
           uv run trellisd demo three-keys
           uv run trellisd demo who-allowed-this
+          uv run trellisd demo catalog-says-pii

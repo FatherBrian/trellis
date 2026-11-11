@@ -1,0 +1,9 @@
+agents:
+  report-bot:
+    owner: dana@example.com
+    description: Drafts finance reports.
+    ceiling:
+      actions: [read, query]
+      # confidential covers the levels under it (public, internal) too.
+      tags: [finance, pii, confidential]
+      never: [export_controlled]

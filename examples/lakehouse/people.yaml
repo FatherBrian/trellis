@@ -1,0 +1,8 @@
+# The directory. M4 replaces this with your IdP's groups and claims.
+people:
+  ana@example.com:
+    groups: [finance-analysts]
+    attributes: {region: emea}
+  tom@example.com:
+    groups: [treasury]
+    attributes: {region: amer}

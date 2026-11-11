@@ -1,0 +1,74 @@
+{
+ "body": {
+  "metadata": {
+   "current-schema-id": 0,
+   "current-snapshot-id": -1,
+   "default-sort-order-id": 0,
+   "default-spec-id": 0,
+   "format-version": 2,
+   "last-column-id": 4,
+   "last-partition-id": 999,
+   "last-sequence-number": 0,
+   "last-updated-ms": 1794436263712,
+   "location": "/tmp/iceberg_warehouse/iceberg_data/finance/gl/journal_entries",
+   "metadata-log": [],
+   "partition-specs": [
+    {
+     "fields": [],
+     "spec-id": 0
+    }
+   ],
+   "partition-statistics": [],
+   "properties": {
+    "trellis.tags": "finance",
+    "write.parquet.compression-codec": "zstd"
+   },
+   "refs": {},
+   "schemas": [
+    {
+     "fields": [
+      {
+       "id": 1,
+       "name": "entry_id",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 2,
+       "name": "amount",
+       "required": false,
+       "type": "decimal(18, 2)"
+      },
+      {
+       "id": 3,
+       "name": "region",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 4,
+       "name": "approver_email",
+       "required": false,
+       "type": "string"
+      }
+     ],
+     "schema-id": 0,
+     "type": "struct"
+    }
+   ],
+   "snapshot-log": [],
+   "snapshots": [],
+   "sort-orders": [
+    {
+     "fields": [],
+     "order-id": 0
+    }
+   ],
+   "statistics": [],
+   "table-uuid": "f9ec5e97-e6d0-467b-8946-0c4200149bc3"
+  },
+  "metadata-location": "/tmp/iceberg_warehouse/iceberg_data/finance/gl/journal_entries/metadata/00000-ccfd0be2-a43f-48cb-9214-e1afecbe461a.metadata.json"
+ },
+ "path": "/v1/namespaces/finance%1Fgl/tables/journal_entries",
+ "status": 200
+}

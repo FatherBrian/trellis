@@ -20,7 +20,7 @@ import json
 import re
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import timedelta
 from importlib import resources
 from pathlib import Path
@@ -30,13 +30,14 @@ import click
 
 from trellisd import __version__
 from trellisd.app import Trellis
+from trellisd.catalog import TableInfo, TagSourceInfo
 from trellisd.compiler import Compiler, render
-from trellisd.config import ConfigError, json_schema, load_config
+from trellisd.config import ConfigError, contract_schema, json_schema, load_config
 from trellisd.db import DEFAULT_URL, Database, DatabaseError
 from trellisd.engine import Decision, Engine
 from trellisd.export import OpenTelemetrySink, backlog, drain
 from trellisd.grants import Grant, GrantError, utcnow
-from trellisd.ledger import Checkpoint, Ledger, LedgerEvent, VerifyResult
+from trellisd.ledger import Checkpoint, Ledger, LedgerEvent, VerifyResult, jsonable
 from trellisd.signing import DEFAULT_KEY_PATH, Signer
 from trellisd.trace import Replay, Trace, TraceError, differences
 from trellisd.trace import replay as replay_event
@@ -66,6 +67,9 @@ def example_dir(name: str) -> Path:
     packaged = Path(str(resources.files("trellisd"))) / "_examples" / name
     if packaged.is_dir():
         return packaged
+    checkout = Path(__file__).resolve().parents[2] / "examples" / name  # an editable install
+    if checkout.is_dir():
+        return checkout
     raise click.ClickException(f"can't find the {name} example config")
 
 
@@ -512,6 +516,248 @@ def run_who_allowed_this(t: Trellis) -> None:
     )
 
 
+@demo.command("catalog-says-pii")
+@click.option(
+    "--catalog",
+    "catalog_uri",
+    help="An Iceberg REST catalog to use, such as http://localhost:8181. The demo creates"
+    " and changes finance.gl.journal_entries there. Default: a catalog it starts in-process.",
+)
+@click.option("--warehouse", help="The catalog's warehouse (Polaris calls it the catalog name).")
+@click.option("--token-env", help="An environment variable holding a bearer token for it.")
+def demo_catalog_says_pii(
+    catalog_uri: str | None, warehouse: str | None, token_env: str | None
+) -> None:
+    """A catalog tags a column pii; the agent's next query comes back masked."""
+    from trellisd.fake_iceberg import FakeIcebergCatalog
+
+    fake = None if catalog_uri else FakeIcebergCatalog()
+    uri = catalog_uri or (fake.uri if fake else "")
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_catalog_says_pii(
+                uri,
+                f"sqlite:///{tmp}/demo.db",
+                warehouse,
+                token_env,
+                go_down=fake.down if fake is not None else None,
+            )
+    finally:
+        if fake is not None:
+            fake.close()
+
+
+class _DemoClock:
+    """Lets the demo move the catalog cache's clock forward without waiting."""
+
+    def __init__(self) -> None:
+        self.offset = 0.0
+
+    def __call__(self) -> float:
+        import time
+
+        return time.monotonic() + self.offset
+
+
+JOURNAL = "finance.gl.journal_entries"
+JOURNAL_ROWS: list[dict[str, Any]] = [
+    {
+        "entry_id": "JE-1001",
+        "amount": "1200.00",
+        "region": "emea",
+        "approver_email": "li@example.com",
+    },
+    {
+        "entry_id": "JE-1002",
+        "amount": "-340.50",
+        "region": "amer",
+        "approver_email": "sam@example.com",
+    },
+    {
+        "entry_id": "JE-1003",
+        "amount": "88.10",
+        "region": "emea",
+        "approver_email": "li@example.com",
+    },
+    {
+        "entry_id": "JE-1004",
+        "amount": "5000.00",
+        "region": "apac",
+        "approver_email": "kai@example.com",
+    },
+]
+
+
+def run_catalog_says_pii(
+    uri: str,
+    db_url: str,
+    warehouse: str | None = None,
+    token_env: str | None = None,
+    *,
+    go_down: Callable[[], None] | None = None,
+) -> list[Decision]:
+    """The M3 demo. Returns its decisions, in order, for the tests.
+
+    ``go_down`` stops the catalog for step 6; without it (a catalog the demo doesn't run),
+    the demo cuts Trellis off from the catalog instead.
+    """
+    import os
+
+    from trellisd.catalog import ConfigCatalog, Resolver
+    from trellisd.iceberg import IcebergRestAdmin, IcebergRestTagSource
+
+    echo = click.echo
+
+    def h(text: str) -> str:
+        return click.style(text, bold=True)
+
+    def dim(text: str) -> None:
+        echo(click.style(text, dim=True))
+
+    base = load_config(example_dir("lakehouse"))
+    settings = base.catalogs["lakehouse"].model_copy(
+        update={"uri": uri, "warehouse": warehouse, "token_env": token_env}
+    )
+    config = base.model_copy(update={"catalogs": {"lakehouse": settings}})
+    clock = _DemoClock()
+    source = IcebergRestTagSource("lakehouse", settings, clock=clock)
+    resolver = Resolver.from_config(config, [ConfigCatalog.from_config(config), source])
+    token = os.environ.get(token_env) if token_env else None
+    admin = IcebergRestAdmin(uri, warehouse=warehouse, token=token)
+    decisions: list[Decision] = []
+
+    admin.drop_table(JOURNAL)
+    admin.create_namespace("finance.gl")
+    admin.create_table(
+        JOURNAL,
+        {
+            "entry_id": "string",
+            "amount": "decimal(18,2)",
+            "region": "string",
+            "approver_email": "string",
+        },
+        {"trellis.tags": "finance"},
+    )
+
+    echo(h("The catalog says pii:") + " contract and catalog tags merge, and the strictest wins.")
+    echo("")
+    where = f"in-process at {uri}; pass --catalog to use your own" if go_down else uri
+    echo(f"An Iceberg REST catalog ({where}) holds {JOURNAL}.")
+    for c in sorted(config.contracts.values(), key=lambda c: c.contract):
+        origin = "read from ODCS" if c.origin == "odcs" else "Trellis format"
+        echo(f"  contract {c.contract} v{c.version} ({origin}): {', '.join(c.tables)}")
+
+    with Trellis(config, db_url, catalog=resolver) as t:
+        issued = t.issue_grant(
+            person="ana@example.com", agent="report-bot", task="Q3 close", scope={"finance"}
+        )
+        echo("")
+        echo(f"Ana lets report-bot work on the Q3 close: scope finance (grant {issued.grant.id}).")
+
+        def query(rows: list[dict[str, Any]], show: bool = True) -> Decision:
+            d = t.authorize(issued.token, "query", JOURNAL, list(rows[0]))
+            decisions.append(d)
+            if d.allowed:
+                stale = click.style(" (from the catalog's cache)", fg="yellow") if d.stale else ""
+                echo(f"  {click.style('ALLOW', fg='green')}{stale}  rows {d.row_filter}")
+                heads = list(rows[0])
+                out = d.enforce(rows)
+                if not show:
+                    dim(f"    {len(out)} rows, masked {', '.join(d.masked) or 'nothing'}")
+                    return d
+                _table([heads, *[[str(r[k]) for k in heads] for r in out]], indent=4, center=False)
+                for col, why in d.masked.items():
+                    dim(f"    masked {col}: {why}")
+            else:
+                echo(f"  {click.style('DENY', fg='red')}  {d.reason}")
+            return d
+
+        def step(n: int, text: str) -> None:
+            echo("")
+            echo(h(f"{n}. ") + text)
+
+        step(
+            1,
+            "report-bot queries the journal. The contract's row rule keeps Ana's region;"
+            " nothing is masked yet.",
+        )
+        query(JOURNAL_ROWS)
+
+        step(2, "The data steward tags approver_email as pii in the catalog:")
+        admin.tag_column(JOURNAL, "approver_email", "pii")
+        echo("     trellis.column.approver_email.tags = pii")
+        t.tags_changed(JOURNAL)
+        dim(
+            "     (the catalog's change hook tells Trellis; otherwise it rereads within five"
+            " minutes)"
+        )
+        echo("   report-bot's next query:")
+        masked = query(JOURNAL_ROWS)
+
+        step(3, "Who masked it, and where did the tag come from?")
+        echo(f"$ trellisd trace {masked.event_id}")
+        echo("")
+        print_trace(trace_event(t.ledger, masked.event_id or ""))
+
+        step(4, "An engineer adds a column, notes, that the contract doesn't list:")
+        admin.add_column(JOURNAL, "notes")
+        t.tags_changed(JOURNAL)
+        rows = [
+            {**r, "notes": "accrual reversal" if i % 2 else "month end"}
+            for i, r in enumerate(JOURNAL_ROWS)
+        ]
+        query(rows)
+        drift = t.ledger.query(kind="catalog.drift")
+        if drift:
+            echo(
+                f"   The ledger logs drift for the contract's owner, "
+                f"{drift[-1].body.get('owner')} (event {drift[-1].seq})."
+            )
+
+        step(
+            5,
+            "The catalog marks the table restricted. The contract says internal; the"
+            " higher level wins:",
+        )
+        admin.tag_table(JOURNAL, "finance", "restricted")
+        t.tags_changed(JOURNAL)
+        query(rows)
+        echo("   The steward takes restricted off again, and the next query is allowed.")
+        admin.tag_table(JOURNAL, "finance")
+        t.tags_changed(JOURNAL)
+        query(rows, show=False)
+
+        step(6, "The catalog goes down.")
+        if go_down is not None:
+            go_down()
+        else:
+
+            def unreachable(*_args: Any) -> tuple[int, bytes]:
+                raise OSError("connection refused")
+
+            source.client.transport = unreachable
+            dim("     (the demo cuts Trellis off from your catalog rather than stopping it)")
+        clock.offset += 10 * 60
+        echo("   Ten minutes later, inside the 15-minute staleness bound:")
+        query(rows, show=False)
+        clock.offset += 10 * 60
+        echo("   Twenty minutes later, past it:")
+        query(rows)
+
+        result = t.ledger.verify()
+        echo("")
+        echo(
+            f"Ledger: {result.checked} events, chain "
+            + (
+                click.style("verified", fg="green")
+                if result.ok
+                else click.style("BROKEN", fg="red")
+            )
+            + "."
+        )
+    return decisions
+
+
 def _demo_table(t: Trellis, token: str, heads: list[str], calls: list[tuple[str, str]]) -> None:
     rows: list[list[str]] = [["CALL", *heads, "", "RESULT"]]
     notes: list[str] = []
@@ -567,14 +813,89 @@ def validate(config_paths: tuple[str, ...]) -> None:
     click.echo(
         f"{YES} {len(cfg.people)} people, {len(cfg.agents)} agents, "
         f"{len(cfg.access)} access rules, {len(cfg.purposes)} purposes, "
-        f"{len(cfg.catalog)} tables; Cedar validates."
+        f"{len(cfg.contracts)} contracts, {len(cfg.catalog)} tables; Cedar validates."
     )
 
 
 @main.command()
-def schema() -> None:
-    """Print the JSON Schema for Trellis's YAML."""
-    click.echo(json.dumps(json_schema(), indent=2))
+@click.option("--contract", "for_contract", is_flag=True, help="The schema for contracts.")
+def schema(for_contract: bool) -> None:
+    """Print the JSON Schema for Trellis's YAML (or, with --contract, for contracts)."""
+    click.echo(json.dumps(contract_schema() if for_contract else json_schema(), indent=2))
+
+
+# -- contracts and catalogs ------------------------------------------------------------------
+
+
+@main.group()
+def contracts() -> None:
+    """Contracts: what each resource is and who may use it."""
+
+
+@contracts.command("list")
+@config_option
+def contracts_list(config_paths: tuple[str, ...]) -> None:
+    """Every contract, its version, owner and the addresses it governs."""
+    try:
+        cfg = load_config(*config_paths)
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    rows = [["CONTRACT", "VERSION", "FROM", "OWNER", "GOVERNS"]]
+    for urn, c in sorted(cfg.contracts.items()):
+        rows.append([urn, c.version_id, c.origin, c.owner, ", ".join(c.bindings)])
+    _table(rows, center=False)
+
+
+@contracts.command("import-odcs")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+def contracts_import_odcs(path: str) -> None:
+    """Show the Trellis contract an ODCS v3 file maps to, or why it can't be mapped."""
+    import yaml
+
+    from trellisd.odcs import OdcsError, to_contracts
+
+    try:
+        mapped = to_contracts(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
+    except OdcsError as exc:
+        raise click.ClickException(
+            f"{path} can't be mapped fully, so Trellis won't use it: {exc}"
+        ) from exc
+    for c in mapped.contracts:
+        body = jsonable(c.model_dump(exclude={"origin"}, exclude_defaults=True))
+        click.echo(yaml.safe_dump(body, sort_keys=False).rstrip())
+        click.echo("---")
+    if mapped.ignored:
+        click.echo(
+            click.style(f"# ignored (not about access): {', '.join(mapped.ignored)}", dim=True)
+        )
+
+
+@main.group()
+def catalog() -> None:
+    """What Trellis sees on a table once contracts and catalogs are merged."""
+
+
+@catalog.command("tags")
+@config_option
+@click.argument("table")
+def catalog_tags(config_paths: tuple[str, ...], table: str) -> None:
+    """The merged tags on TABLE and its columns, each with where it came from."""
+    from trellisd.app import tag_sources
+    from trellisd.catalog import Resolver, SourceUnavailable
+
+    try:
+        cfg = load_config(*config_paths)
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    try:
+        info = Resolver.from_config(cfg, tag_sources(cfg)).table(table)
+    except SourceUnavailable as exc:
+        raise click.ClickException(str(exc)) from exc
+    if info is None:
+        raise click.ClickException(f"{table} has no contract and no catalog knows it")
+    print_classification(info, columns=sorted(info.columns))
+    if info.stale:
+        click.echo("  (from a catalog's cached answer: it couldn't be reached)")
 
 
 # -- ledger ----------------------------------------------------------------------------------
@@ -777,15 +1098,57 @@ def print_trace(t: Trace) -> None:
             echo(f"  {mark} {c.label}: {c.reason} ({behind})")
     if not d.checks:
         echo(f"  {NO} {d.reason}")
+    if t.table is not None and (t.table.contract or _catalog_sources(t.table)):
+        echo("")
+        echo(click.style("Where its tags came from", bold=True))
+        print_classification(t.table, columns=d.columns or tuple(d.masked))
+    if d.stale:
+        echo("  (decided from the catalog's cached answer: it couldn't be reached)")
     if d.allowed and (d.masked or d.row_filter):
         echo("")
         echo(click.style("Obligations", bold=True))
         for col, why in d.masked.items():
             echo(f"  masked {col}: {why}")
         if d.row_filter:
-            echo(f"  rows   {d.row_filter}")
+            src = f" (from {', '.join(d.row_filter_from)})" if d.row_filter_from else ""
+            echo(f"  rows   {d.row_filter}{src}")
     for w in t.warnings:
         echo(click.style(f"  warning: {w}", fg="red"))
+
+
+def _catalog_sources(info: TableInfo) -> list[str]:
+    return sorted(
+        {
+            str(src)
+            for prov in [info.provenance, *info.column_provenance.values()]
+            for srcs in prov.values()
+            for src in srcs
+            if src.source.startswith("catalog ")
+        }
+    )
+
+
+def print_classification(info: TableInfo, columns: Sequence[str] = ()) -> None:
+    """The contract, the table's tags and each column's extra tags, each with its source."""
+    echo = click.echo
+    if info.contract:
+        echo(f"  contract {info.contract} {info.contract_version}, owner {info.owner}")
+    for owner_src, owner in sorted(info.catalog_owners.items()):
+        echo(f"  ({owner_src} names {owner} as owner; Trellis uses the contract's)")
+
+    def srcs(items: Sequence[TagSourceInfo]) -> str:
+        return ", ".join(str(s) for s in items)
+
+    tags = ", ".join(f"{t} ({srcs(info.provenance.get(t, ()))})" for t in sorted(info.tags))
+    echo(f"  {info.name}: {tags or 'no tags'}")
+    shown = list(dict.fromkeys([*columns, *sorted(info.column_provenance)]))
+    for col in shown:
+        own = info.columns.get(col, frozenset()) - info.tags
+        if col in info.drift:
+            echo(f"    {col}: not in the contract (drift)")
+        elif own:
+            parts = ", ".join(f"{t} ({srcs(info.sources_of(col, t))})" for t in sorted(own))
+            echo(f"    {col}: {parts}")
 
 
 @main.command()
@@ -856,7 +1219,7 @@ def _split(text: str) -> list[str]:
     return [p.strip() for p in text.split(",") if p.strip()]
 
 
-def _table(rows: list[list[str]]) -> None:
+def _table(rows: list[list[str]], indent: int = 0, center: bool = True) -> None:
     def width(s: str) -> int:
         return len(click.unstyle(s))
 
@@ -865,12 +1228,12 @@ def _table(rows: list[list[str]]) -> None:
         cells = []
         for i, cell in enumerate(row):
             pad = widths[i] - width(cell)
-            if n > 0 and 0 < i < len(row) - 2:  # centre the tick columns
+            if center and n > 0 and 0 < i < len(row) - 2:  # centre the tick columns
                 left = pad // 2
                 cells.append(" " * left + cell + " " * (pad - left))
             else:
                 cells.append(cell + " " * pad)
-        line = "  ".join(cells).rstrip()
+        line = " " * indent + "  ".join(cells).rstrip()
         click.echo(click.style(line, bold=True) if n == 0 else line)
 
 

@@ -67,6 +67,7 @@ packages = ["src/trellisd"]
 [tool.hatch.build.targets.wheel.force-include]
 # The demo configs ship inside the wheel so `trellisd demo` works after `pip install`.
 "examples/three-keys" = "trellisd/_examples/three-keys"
+"examples/lakehouse" = "trellisd/_examples/lakehouse"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -89,7 +90,8 @@ known-first-party = ["trellisd"]
 known-local-folder = ["conftest"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "PT018"]
+"tests/fixtures/iceberg/record.py" = ["S108"]
 
 [tool.mypy]
 python_version = "3.11"

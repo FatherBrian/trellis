@@ -16,7 +16,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from trellisd.catalog import Catalog, table_snapshot
+from trellisd.catalog import (
+    Catalog,
+    ConfigCatalog,
+    Resolver,
+    SourceUnavailable,
+    TableInfo,
+    TagSource,
+    table_snapshot,
+)
 from trellisd.config import TrellisConfig, load_config
 from trellisd.db import DEFAULT_URL, Cursor, Database
 from trellisd.engine import CheckResult, Decision, Engine
@@ -49,9 +57,20 @@ class Trellis:
         self.signer = signer or Signer.generate()
         self.grants = GrantStore(self.db)
         self.ledger = Ledger(self.db, self.signer)
-        self.engine = Engine(config, catalog)
+        self.engine = Engine(config, catalog or Resolver.from_config(config, tag_sources(config)))
+        self._drift_seen: set[tuple[str, str, str]] = set()
         #: The version every decision records, so it can be replayed against this config.
         self.config_version = self.ledger.save_snapshot("config", jsonable(config))
+
+    @property
+    def catalog(self) -> Catalog:
+        return self.engine.catalog
+
+    def tags_changed(self, table: str | None = None) -> None:
+        """A catalog's change hook: forget cached tags so a new restriction applies now."""
+        evict = getattr(self.engine.catalog, "evict", None)
+        if evict is not None:
+            evict(table)
 
     @classmethod
     def open(
@@ -181,10 +200,10 @@ class Trellis:
         if a is None:
             return [f"there is no agent called {agent}"]
         out = []
-        over = sorted(scope - a.ceiling.tags)
+        over = sorted(scope - self.config.at_or_below(a.ceiling.tags))
         if over:
             out.append(f"{agent}'s ceiling doesn't include {', '.join(over)}")
-        never = sorted(scope & a.ceiling.never)
+        never = sorted(scope & self.config.at_or_above(a.ceiling.never))
         if never:
             out.append(f"{agent} may never touch {', '.join(never)}")
         extra = sorted(set(actions) - set(a.ceiling.actions))
@@ -194,8 +213,15 @@ class Trellis:
 
     def _reaches(self, person: str, tag: str, action: str) -> bool:
         for name in self.engine.catalog.tables():
-            info = self.engine.catalog.table(name)
-            if info and tag in info.tags and self.engine.subject_allows(person, action, name):
+            try:
+                info = self.engine.catalog.table(name)
+            except SourceUnavailable:
+                continue  # an unreachable catalog can't show anyone reaches the tag
+            if (
+                info
+                and tag in info.declared_tags
+                and self.engine.subject_allows(person, action, name)
+            ):
                 return True
         return False
 
@@ -264,14 +290,53 @@ class Trellis:
         now: datetime | None = None,
     ) -> Decision:
         """Decide for a grant you already hold (operators and tests). Recorded like any call."""
-        decision = self.engine.decide(grant, action, resource, columns, now)
-        return self._record(decision, grant, now)
+        decision, info = self.engine.decide_with_info(grant, action, resource, columns, now)
+        if info is not None and info.drift:
+            self._report_drift(info, now)
+        return self._record(decision, grant, now, info)
 
-    def _record(self, decision: Decision, grant: Grant | None, now: datetime | None) -> Decision:
+    def _report_drift(self, info: TableInfo, now: datetime | None) -> None:
+        """Log each drifted column once per contract version, for the contract's owner."""
+        for col in sorted(info.drift):
+            key = (info.name, col, info.contract_version or "")
+            if key in self._drift_seen:
+                continue
+            sources = sorted(
+                {
+                    str(s)
+                    for srcs in info.provenance.values()
+                    for s in srcs
+                    if not s.source.startswith("contract ")
+                }
+            )
+            try:
+                self.ledger.append(
+                    "catalog.drift",
+                    body={
+                        "table": info.name,
+                        "column": col,
+                        "contract": info.contract,
+                        "contract_version": info.contract_version,
+                        "owner": info.owner,
+                        "seen_in": sources,
+                        "note": "masked until the contract's owner classifies it",
+                    },
+                    ts=now,
+                )
+            except LedgerUnavailable:
+                return
+            self._drift_seen.add(key)
+
+    def _record(
+        self,
+        decision: Decision,
+        grant: Grant | None,
+        now: datetime | None,
+        info: TableInfo | None = None,
+    ) -> Decision:
         body = decision.model_dump(mode="json", exclude={"event_id"})
         body["receipt"] = grant.receipt if grant else None
         body["config_version"] = self.config_version
-        info = self.engine.catalog.table(decision.resource)
         table = jsonable(table_snapshot(info)) if info else None
 
         def store_snapshot(cur: Cursor, _event: LedgerEvent) -> None:
@@ -303,4 +368,14 @@ class Trellis:
         return decision.model_copy(update={"event_id": event.event_id})
 
 
-__all__ = ["CheckResult", "Decision", "Trellis"]
+def tag_sources(config: TrellisConfig) -> list[TagSource]:
+    """The config's ``catalog:`` section, then each configured catalog, in order."""
+    from trellisd.iceberg import IcebergRestTagSource
+
+    sources: list[TagSource] = [ConfigCatalog.from_config(config)]
+    for name, settings in sorted(config.catalogs.items()):
+        sources.append(IcebergRestTagSource(name, settings))
+    return sources
+
+
+__all__ = ["CheckResult", "Decision", "Trellis", "tag_sources"]

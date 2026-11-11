@@ -9,6 +9,10 @@ Every check also runs per column. A column one of the checks won't allow is mask
 ``@mask`` obligations on the deciding policies mask columns by tag. ``@row_filter``
 obligations are ANDed and filled in from the person's attributes or the trigger record; if
 a value is missing, the call is denied (fail closed).
+
+Tags come from the resolver (contracts merged with catalogs, strictest first). A column
+the catalog has and the contract lacks (drift) is masked, and a catalog that can't answer
+past its staleness bound denies the call.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from typing import Any
 import cedarpy
 from pydantic import BaseModel, ConfigDict, Field
 
-from trellisd.catalog import Catalog, ConfigCatalog, TableInfo
+from trellisd.catalog import Catalog, Resolver, SourceUnavailable, TableInfo
 from trellisd.compiler import Compiler, PolicyMeta, PolicySetText
 from trellisd.config import ACTIONS, TrellisConfig
 from trellisd.grants import Grant
@@ -68,7 +72,14 @@ class Decision(BaseModel):
     #: column -> why it is masked
     masked: dict[str, str] = Field(default_factory=dict)
     row_filter: str | None = None
+    #: The policies whose @row_filter made up ``row_filter``.
+    row_filter_from: tuple[str, ...] = ()
     policy_ids: tuple[str, ...] = ()
+    #: The contract governing the resource, and its version, when there is one.
+    contract: str | None = None
+    contract_version: str | None = None
+    #: Decided from a cached catalog answer because the catalog couldn't be reached.
+    stale: bool = False
     #: The ledger event that recorded this decision (set once it is written).
     event_id: str | None = None
 
@@ -79,12 +90,25 @@ class Decision(BaseModel):
         """Mask one result row as this decision requires."""
         return {k: (MASK if k in self.masked else v) for k, v in row.items()}
 
+    @property
+    def obligations(self) -> dict[str, Any]:
+        """What an enforcement point must do with the result: mask, then filter rows."""
+        return {"mask": dict(self.masked), "row_filter": self.row_filter}
+
+    def enforce(self, rows: Any) -> list[dict[str, Any]]:
+        """Apply this decision's obligations to result rows (see ``trellisd.enforce``)."""
+        from trellisd.enforce import RowsEnforcer
+
+        if not self.allowed:
+            return []
+        return RowsEnforcer().apply(self.obligations, rows)
+
 
 class ObligationError(Exception):
     pass
 
 
-_TEMPLATE = re.compile(r"\{(person|trigger|grant)\.([A-Za-z_][A-Za-z0-9_]*)\}")
+_TEMPLATE = re.compile(r"\{(person|human|trigger|grant)\.([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def sql_quote(value: str) -> str:
@@ -96,7 +120,7 @@ class Engine:
 
     def __init__(self, config: TrellisConfig, catalog: Catalog | None = None) -> None:
         self.config = config
-        self.catalog = catalog or ConfigCatalog.from_config(config)
+        self.catalog: Catalog = catalog or Resolver.from_config(config)
         self.compiler = Compiler(config)
         self.subject_set = self.compiler.subject_policies()
         self.ceiling_set = self.compiler.ceiling_policies()
@@ -114,6 +138,17 @@ class Engine:
         columns: Sequence[str] | None = None,
         now: datetime | None = None,
     ) -> Decision:
+        return self.decide_with_info(grant, action, resource, columns, now)[0]
+
+    def decide_with_info(
+        self,
+        grant: Grant,
+        action: str,
+        resource: str,
+        columns: Sequence[str] | None = None,
+        now: datetime | None = None,
+    ) -> tuple[Decision, TableInfo | None]:
+        """Decide, and return the table classification the decision used (for the ledger)."""
         base: dict[str, Any] = {
             "action": action,
             "resource": resource,
@@ -126,24 +161,35 @@ class Engine:
         if action not in ACTIONS:
             return Decision(
                 allowed=False, reason=f"unknown action {action!r}", denied_by=("action",), **base
-            )
-        info = self.catalog.table(resource)
+            ), None
+        try:
+            info = self.catalog.table(resource)
+        except SourceUnavailable as exc:
+            return Decision(
+                allowed=False,
+                reason=f"{exc}, so Trellis denies (pip_unavailable)",
+                denied_by=("catalog",),
+                **base,
+            ), None
         if info is None:
             return Decision(
                 allowed=False,
-                reason=f"{resource} isn't in the catalog, and Trellis denies what it can't"
-                " classify",
+                reason=f"{resource} has no contract and no catalog knows it, and Trellis"
+                " denies what it can't classify",
                 denied_by=("catalog",),
                 **base,
-            )
+            ), None
         base["resource_tags"] = tuple(sorted(info.tags))
+        base["contract"] = info.contract
+        base["contract_version"] = info.contract_version
+        base["stale"] = info.stale
         if not info.tags:
             return Decision(
                 allowed=False,
                 reason=f"{resource} has no tags, and Trellis denies what it can't classify",
                 denied_by=("catalog",),
                 **base,
-            )
+            ), info
         cols = list(columns) if columns else sorted(info.columns)
         checks, per_column, deciding = self._run_checks(grant, action, info, cols, now)
         allowed = all(c.allowed for c in checks)
@@ -162,19 +208,33 @@ class Engine:
                 denied_by=denied_by,
                 policy_ids=policy_ids,
                 **base,
-            )
+            ), info
 
         masked: dict[str, str] = {}
+        for col in cols:
+            if col in info.drift:
+                masked[col] = (
+                    f"drift: the catalog has it and contract {info.contract} doesn't, so it's"
+                    " unclassified until its owner adds it"
+                )
         for col, denials in zip(cols, per_column, strict=True):
-            if denials:
-                masked[col] = f"{denials[0].label} doesn't allow it"
+            if denials and col not in masked:
+                tags = info.column_tags(col) - info.tags
+                where = self._sources(info, col, tags)
+                masked[col] = f"{denials[0].label} doesn't allow it" + (
+                    f" ({where})" if where else ""
+                )
         for meta in deciding:
             for col in cols:
                 hit = meta.mask & info.column_tags(col)
                 if hit and col not in masked:
-                    masked[col] = f"@mask {','.join(sorted(hit))} on {meta.id}"
+                    where = self._sources(info, col, hit)
+                    masked[col] = f"@mask {','.join(sorted(hit))} on {meta.id}" + (
+                        f" ({where})" if where else ""
+                    )
+        filters = [m for m in deciding if m.row_filter]
         try:
-            row_filter = self._row_filter(grant, [m for m in deciding if m.row_filter])
+            row_filter = self._row_filter(grant, filters)
         except ObligationError as exc:
             return Decision(
                 allowed=False,
@@ -183,7 +243,7 @@ class Engine:
                 denied_by=("obligation",),
                 policy_ids=policy_ids,
                 **base,
-            )
+            ), info
         reason = "allowed: " + "; ".join(f"{c.label} ({', '.join(c.policies)})" for c in checks)
         return Decision(
             allowed=True,
@@ -191,13 +251,26 @@ class Engine:
             checks=tuple(checks),
             masked=masked,
             row_filter=row_filter,
+            row_filter_from=tuple(dict.fromkeys(m.id for m in filters)),
             policy_ids=policy_ids,
             **base,
-        )
+        ), info
+
+    @staticmethod
+    def _sources(info: TableInfo, col: str, tags: frozenset[str]) -> str:
+        parts = []
+        for tag in sorted(tags):
+            srcs = [s for s in info.sources_of(col, tag) if s.source != "config"]
+            if srcs:
+                parts.append(f"{tag} from {', '.join(str(s) for s in srcs)}")
+        return "; ".join(parts)
 
     def subject_allows(self, person: str, action: str, table: str) -> bool:
         """Whether the person's own access covers ``action`` on ``table`` (used at issuance)."""
-        info = self.catalog.table(table)
+        try:
+            info = self.catalog.table(table)
+        except SourceUnavailable:
+            return False
         if info is None:
             return False
         probe = Grant(
@@ -272,14 +345,22 @@ class Engine:
                 parent = [("Dataset", ".".join(parts[: n - 1]))] if n > 1 else []
                 out.append(ent("Dataset", ds, None, parent))
         out.append(
-            ent("Table", info.name, {"tags": sorted(info.tags)}, [("Dataset", info.dataset)])
+            ent(
+                "Table",
+                info.name,
+                {"tags": sorted(info.tags), "declared": sorted(info.declared_tags)},
+                [("Dataset", info.dataset)],
+            )
         )
         for col in dict.fromkeys([*info.columns, *cols]):
             out.append(
                 ent(
                     "Column",
                     f"{info.name}.{col}",
-                    {"tags": sorted(info.column_tags(col))},
+                    {
+                        "tags": sorted(info.column_tags(col)),
+                        "declared": sorted(info.column_declared(col)),
+                    },
                     [("Table", info.name)],
                 )
             )
@@ -356,14 +437,25 @@ class Engine:
     def _considered(self, name: str, grant: Grant, ps: PolicySetText) -> tuple[str, ...]:
         if name == "person":
             groups = set(self.config.groups_of(grant.subject))
+
+            def mine(who: str) -> bool:
+                kind, value = who.split(":", 1)
+                return (kind == "group" and value in groups) or (
+                    kind == "user" and value == grant.subject
+                )
+
             ids = []
             for rule in self.config.access:
                 for i, who in enumerate(rule.who):
-                    kind, value = who.split(":", 1)
-                    if (kind == "group" and value in groups) or (
-                        kind == "user" and value == grant.subject
-                    ):
+                    if mine(who):
                         ids.append(f"access.{rule.id}" + (f".{i}" if len(rule.who) > 1 else ""))
+            for _urn, c in sorted(self.config.contracts.items()):
+                for role, acc in sorted(c.access.items()):
+                    for i, who in enumerate(acc.who):
+                        if mine(who) and c.tables:
+                            ids.append(
+                                f"contract.{c.name}.{role}" + (f".{i}" if len(acc.who) > 1 else "")
+                            )
             return tuple(ids)
         if name == "purpose":
             prefix = f"purpose.{grant.subject}"
@@ -377,6 +469,7 @@ class Engine:
         self, name: str, grant: Grant, action: str, info: TableInfo, metas: list[PolicyMeta]
     ) -> str:
         tags = ", ".join(sorted(info.tags))
+        declared = ", ".join(sorted(info.declared_tags)) or "nothing"
         forbids = [m.id for m in metas if m.effect == "forbid"]
         if name == "person":
             return f"no access rule lets {grant.subject} {action} {info.name} ({tags})"
@@ -392,16 +485,26 @@ class Engine:
             if agent is None:
                 return f"{grant.agent} has no ceiling, so it may touch nothing"
             if forbids:
-                never = sorted(info.tags & agent.ceiling.never)
-                return f"it may never touch {', '.join(never)}"
+                never = sorted(info.tags & self.config.at_or_above(agent.ceiling.never))
+                return f"it may never touch {', '.join(never)}" + self._from(info, never)
             if action not in agent.ceiling.actions:
                 return f"it doesn't allow {action}"
-            missing = sorted(info.tags - agent.ceiling.tags)
-            return f"it doesn't include {', '.join(missing)}"
+            missing = sorted(info.tags - self.config.at_or_below(agent.ceiling.tags))
+            return f"it doesn't include {', '.join(missing)}" + self._from(info, missing)
         scope = ", ".join(sorted(grant.scope))
         if action not in grant.actions:
             return f"the grant doesn't allow {action}"
-        return f"the grant covers {scope}, and {info.name} is {tags}"
+        return f"the grant covers {scope}, and {info.name} is {declared}"
+
+    @staticmethod
+    def _from(info: TableInfo, tags: list[str]) -> str:
+        """Name the source of a restriction when it isn't just the contract or config."""
+        parts = []
+        for t in tags:
+            srcs = [s for s in info.provenance.get(t, ()) if s.source.startswith("catalog ")]
+            if srcs:
+                parts.append(f"{t} from {', '.join(str(s) for s in srcs)}")
+        return f" ({'; '.join(parts)})" if parts else ""
 
     # -- obligations -----------------------------------------------------------------------
 
@@ -419,7 +522,7 @@ class Engine:
         def value(m: re.Match[str]) -> str:
             ns, key = m.group(1), m.group(2)
             v: str | None = None
-            if ns == "person" and not grant.is_purpose:
+            if ns in ("person", "human") and not grant.is_purpose:
                 person = self.config.people.get(grant.subject)
                 v = person.attributes.get(key) if person else None
             elif ns == "trigger" and key == "record":

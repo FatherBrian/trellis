@@ -1,0 +1,11 @@
+{
+ "body": {
+  "error": {
+   "code": 404,
+   "message": "Table does not exist: finance.gl.missing",
+   "type": "NoSuchTableException"
+  }
+ },
+ "path": "/v1/namespaces/finance%1Fgl/tables/missing",
+ "status": 404
+}

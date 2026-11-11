@@ -7,7 +7,7 @@ permit (
 )
 when {
   resource in Dataset::"finance.gl" &&
-  resource.tags.containsAny(["finance"])
+  resource.declared.containsAny(["finance"])
 };
 
 @id("access.treasury")
@@ -18,7 +18,7 @@ permit (
 )
 when {
   resource in Dataset::"finance.treasury" &&
-  resource.tags.containsAny(["finance"])
+  resource.declared.containsAny(["finance"])
 };
 
 @id("access.ana-hr")
@@ -29,7 +29,7 @@ permit (
 )
 when {
   resource in Dataset::"hr" &&
-  resource.tags.containsAny(["hr"])
+  resource.declared.containsAny(["hr"])
 };
 
 @id("access.quality")
@@ -40,7 +40,7 @@ permit (
 )
 when {
   resource in Dataset::"quality" &&
-  resource.tags.containsAny(["quality"])
+  resource.declared.containsAny(["quality"])
 };
 
 @id("purpose.inspection-review")
@@ -52,7 +52,7 @@ permit (
 when {
   ["inspector-bot"].contains(context.agent) &&
   resource in Dataset::"quality" &&
-  resource.tags.containsAny(["quality"])
+  resource.declared.containsAny(["quality"])
 };
 
 // ---- ceiling ----

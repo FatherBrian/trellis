@@ -43,6 +43,7 @@ and decision lands in a hash-chained ledger before the answer goes out.
 python -m pip install -e .
 trellisd demo three-keys
 trellisd demo who-allowed-this    # trace a deny to its grant, then catch a ledger edit
+trellisd demo catalog-says-pii    # a catalog tags a column pii; the next query is masked
 ```
 
 ```
@@ -124,6 +125,8 @@ trellisd explain EVENT_ID --replay   # re-run it at its recorded version and tod
 trellisd ledger checkpoint --out checkpoint.json
 trellisd ledger verify [--checkpoint checkpoint.json]
 trellisd ledger export [--console]   # OpenTelemetry spans from the outbox
+trellisd contracts list | import-odcs FILE
+trellisd catalog tags TABLE          # merged tags, each with its source
 ```
 
 `--config` (or `TRELLISD_CONFIG`) is a YAML file or directory; `--db` (or `TRELLISD_DB`)
@@ -144,11 +147,16 @@ src/trellisd/
   trace.py           who allowed this: trace a decision, replay it
   export.py          the outbox to OpenTelemetry
   app.py             Trellis: issue, revoke, authorize (ledger before the answer)
-  catalog.py         tables and tags (YAML now; contracts and Iceberg REST in M3)
+  catalog.py         the resolver: contracts and catalogs merged, strictest tag wins
+  iceberg.py         the Iceberg REST tag source (and a small admin client)
+  fake_iceberg.py    an in-process Iceberg REST catalog for demos and tests
+  odcs.py            the ODCS v3 contract adapter
+  enforce.py         applying masks and row filters to rows
   db.py              SQLite or Postgres
   mcp_middleware.py  TrellisGuard for MCP tool calls
   cli.py             the trellisd command
-examples/three-keys  the demo config
+examples/three-keys  the M1 and M2 demo config
+examples/lakehouse   contracts and an Iceberg REST catalog (M3)
 demo/                one note per milestone demo
 ```
 

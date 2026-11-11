@@ -55,4 +55,12 @@ def test_bad_yaml_and_missing_paths(tmp_path: Path) -> None:
 
 def test_json_schema_names_the_sections() -> None:
     schema = json_schema()
-    assert set(schema["properties"]) == {"people", "agents", "access", "purposes", "catalog"}
+    assert set(schema["properties"]) == {
+        "people",
+        "agents",
+        "access",
+        "purposes",
+        "catalog",
+        "catalogs",
+        "levels",
+    }

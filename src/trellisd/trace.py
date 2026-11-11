@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from trellisd.catalog import SnapshotCatalog, table_from_snapshot
+from trellisd.catalog import SnapshotCatalog, TableInfo, table_from_snapshot
 from trellisd.config import TrellisConfig
 from trellisd.engine import CheckResult, Decision, Engine
 from trellisd.grants import Grant
@@ -43,6 +43,8 @@ class Trace:
     grant: GrantHistory | None
     #: Problems found while walking: a receipt that matches nothing, a bad signature.
     warnings: list[str] = field(default_factory=list)
+    #: The table's classification as the decision saw it: contract, tags and their sources.
+    table: TableInfo | None = None
 
 
 def recorded_decision(event: LedgerEvent) -> Decision:
@@ -85,7 +87,9 @@ def trace(ledger: Ledger, event_id: str) -> Trace:
             )
         if not history.signature_ok:
             warnings.append(f"the grant entry for {event.grant_id} isn't validly signed")
-    return Trace(event=event, decision=decision, grant=history, warnings=warnings)
+    snap = ledger.snapshot(str(event.body.get("catalog_snapshot", "")))
+    table = table_from_snapshot(snap) if snap else None
+    return Trace(event=event, decision=decision, grant=history, warnings=warnings, table=table)
 
 
 # -- replay ----------------------------------------------------------------------------------
