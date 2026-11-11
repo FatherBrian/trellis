@@ -5,10 +5,11 @@
 Trellis gives an AI agent only the data access its current task needs, on behalf of one
 specific person, and records a tamper-evident proof of every decision. It pairs
 delegated attribute-based access control (ABAC) with an append-only access ledger, and
-ships MCP middleware so any MCP tool can adopt it in a few lines.
+ships MCP middleware so any MCP tool can adopt it in a few lines. The package, import
+and command are all `trellisd`.
 
-> Status: pre-alpha scaffold. The decision core, grants and ledger work and are tested;
-> the HTTP server, persistence, Unity Catalog adapter and demo are still to come.
+> Status: pre-alpha. M1 (grants on Cedar, the three checks) works and is tested; the
+> ledger v1, contracts and Iceberg, sign-in, Reef and the quickstart follow.
 > See [docs/roadmap.md](docs/roadmap.md).
 
 ## Why
@@ -17,96 +18,92 @@ Most organizations have a written policy for what agents may read. Far fewer can
 it at the moment an agent reads data, expire the access when the task ends, or produce
 a complete record of what an agent touched for whom. IAM issues identities, catalogs tag
 data, and OPA or Cedar evaluate policies, but none of them models *an agent acting for a
-human on a task*, and none ties each decision to an audit record by construction.
+person on a task*, and none ties each decision to an audit record by construction.
 
-## The idea
+## The idea: three keys
 
-An agent never inherits a person's access. It holds a **grant**, which binds five things:
-the human, the agent, the task, a scope expressed as data tags, and a time limit. The
-agent's token is bound to exactly one grant.
+An agent never inherits a person's access. It holds a **grant** that records who allowed
+it, for which person or purpose, on which task, until when. Every call then needs three
+yeses, each asked separately in [Cedar](https://www.cedarpolicy.com/):
+
+| | Personal agent | Process agent |
+|---|---|---|
+| 1 | the person's access | the purpose's scope (with a named human owner) |
+| 2 | the agent's ceiling | the agent's ceiling |
+| 3 | the task scope | the trigger scope (the record that started the run) |
+
+The three limits live in three separate Cedar policy sets, so a permit written for one can
+never satisfy another. Trellis asks all three even after a no, and a deny names every check
+that refused and the policy behind it. `@mask` and `@row_filter` annotations on the
+deciding policies come back as obligations. Everything is deny by default, and every grant
+and decision lands in a hash-chained ledger before the answer goes out.
+
+```bash
+python -m pip install -e .
+trellisd demo three-keys
+```
 
 ```
-effective access = human access ∩ agent ceiling ∩ task scope
+CALL                                  Ana's access  report-bot's ceiling  the task         RESULT
+read finance.gl.journal_entries            ✓                 ✓               ✓      ALLOW  masked approver_email; rows region = 'emea'
+read finance.gl.export_ledger              ✓                 ✗               ✓      DENY   it may never touch export_controlled
+read hr.payroll                            ✓                 ✓               ✗      DENY   the grant covers finance, and hr.payroll is hr, pii
+read finance.treasury.cash_positions       ✗                 ✓               ✓      DENY   no access rule lets ana@example.com read ...
 ```
 
-- **Human access**: what the delegating person may read, from the catalog or IdP.
-- **Agent ceiling**: the most this agent may ever touch, set by its owner.
-- **Task scope**: the tags this task needs, declared when the grant is issued.
+[demo/M1.md](demo/M1.md) walks through it.
 
-Everything outside the intersection is denied by default. Inside it, policies decide which
-actions are allowed and shape the answer. Every decision returns allow or deny, column
-masks, a row filter, annotations, and a plain-language reason, and every decision lands
-in a hash-chained ledger.
+## Writing policy
 
-## Policies
+People write YAML; Trellis compiles it to Cedar (`trellisd compile` shows the output and
+`trellisd validate` checks it against Trellis's Cedar schema).
 
 ```yaml
 agents:
   report-bot:
-    owner: group:finance-platform
-    ceiling: [finance, pii]          # never export_controlled
+    owner: ana@example.com
+    ceiling:
+      tags: [finance, pii, hr]
+      never: [export_controlled]
 
-policies:
-  - id: finance-read
-    principal: { agent: report-bot, on_behalf_of: group:finance-analysts }
-    action: [read, query]
-    resource: { tags: [finance] }
-    conditions:
-      - grant.scope contains finance
-      - column.tags excludes pii     # column conditions mask, they don't deny
-    annotations:
-      log: required
+access:
+  - id: finance-gl
+    who: [group:finance-analysts]
+    resources: [finance.gl]
+    tags: [finance]
+    mask: [pii]
+    row_filter: "region = {person.region}"
+
+purposes:
+  inspection-review:
+    owner: quality-lead@example.com
+    agents: [inspector-bot]
+    tags: [quality]
+    trigger: {type: inspection, tags: [quality], row_filter: "inspection_id = {trigger.record}"}
 ```
 
-## Quickstart
+`trellisd schema` prints the JSON Schema. See [examples/three-keys](examples/three-keys).
 
-```bash
-git clone https://github.com/OWNER/trellis && cd trellis
-uv sync --extra dev          # or: python -m pip install -e ".[dev]"
-uv run pytest
-uv run trellis policy check examples/policies.yaml
-```
-
-Use it as a library:
+## As a library
 
 ```python
-from datetime import timedelta
-from trellis import Authorizer, GrantStore, Ledger, Principal, YamlCatalog, load_policies
+from trellisd import Trellis
 
-grants = GrantStore()
-authorizer = Authorizer(
-    catalog=YamlCatalog.from_file("examples/catalog.yaml"),
-    policies=load_policies("examples/policies.yaml"),
-    grants=grants,
-)
-issued = grants.issue(
-    human="alice@example.com", agent="report-bot",
-    task="month-end variance report", scope={"finance"}, ttl=timedelta(hours=1),
-)
-
-principal = Principal.from_grant(issued.grant)
-decision = authorizer.authorize(principal, "read", "finance.gl.journal_entries")
-print(decision.allowed, decision.masks, decision.reason)
-# True ('approver_email', 'part_number') allowed by finance-read; masked approver_email ...
-
-with Ledger("trellis-ledger.db") as ledger:
-    ledger.record(principal, "read", "finance.gl.journal_entries", decision)
+trellis = Trellis.open("examples/three-keys", db_url="sqlite:///trellisd.db")
+issued = trellis.issue_grant(person="ana@example.com", agent="report-bot",
+                             task="Q3 close", scope={"finance"})
+decision = trellis.authorize(issued.token, "read", "finance.gl.journal_entries")
+print(decision.allowed, decision.masked, decision.row_filter)
+for check in decision.checks:
+    print(check.label, check.allowed, check.policies, check.reason)
 ```
 
-Then ask what happened:
-
-```bash
-trellis trace --agent report-bot --for alice@example.com --since 7d
-trellis explain <event-id>
-trellis ledger verify
-```
-
-Guard an MCP tool:
+Guard an MCP tool (Reef, the tool aggregator, builds on this in M5):
 
 ```python
-from trellis.mcp_middleware import TrellisGuard
+from trellisd.mcp_middleware import TrellisGuard
 
-guard = TrellisGuard(authorizer, ledger, token_provider=current_request_token)
+guard = TrellisGuard(trellis, token_provider=current_request_token)
 
 @mcp.tool()
 @guard.tool(action="read", resource="finance.gl.journal_entries")
@@ -114,35 +111,35 @@ def journal_entries(limit: int = 100) -> list[dict]:
     ...
 ```
 
-## v0.1 scope
+## Commands
 
-| # | Feature | State |
-|---|---------|-------|
-| 1 | Grants: issue, list, revoke; expiring agent tokens | Library done; CLI and persistence to do |
-| 2 | Policies as code (YAML) | Done, syntax to settle |
-| 3 | Decision API: `authorize(principal, action, resource, context)` | Library done; HTTP server to do |
-| 4 | Ledger: hash-chained, SQLite/Postgres, OpenTelemetry, Parquet | SQLite and verify done; rest to do |
-| 5 | Trace CLI: `trellis trace`, `trellis explain` | Basic versions work |
-| 6 | MCP middleware for the Python MCP SDK, Unity Catalog OSS tags | Guard done; SDK wiring and UC adapter to do |
-| 7 | `docker compose up` demo | Placeholder |
+```bash
+trellisd grant issue | run | list | revoke
+trellisd check --token <token> read finance.gl.journal_entries
+trellisd compile | validate | schema
+trellisd trace --agent report-bot
+trellisd ledger verify
+```
 
-Non-goals for v0.1: enforcement inside query engines, a web UI, multi-tenancy, Cedar or
-OPA backends, and identity issuance (Trellis consumes identities from your IdP).
+`--config` (or `TRELLISD_CONFIG`) is a YAML file or directory; `--db` (or `TRELLISD_DB`)
+is `sqlite:///file.db` or a `postgresql://` URL. Grants and the ledger share the database.
 
 ## Layout
 
 ```
-src/trellis/
-  grants.py          grants, agent ceilings, tokens
-  policy.py          YAML policy model and loader
-  catalog.py         data tags and human clearances (YAML fallback, Unity Catalog OSS stub)
-  decision.py        Authorizer.authorize(): the intersection, deny by default
-  ledger.py          append-only hash-chained ledger and verify()
+src/trellisd/
+  config.py          the YAML format and its JSON Schema
+  compiler.py        YAML to Cedar: three policy sets, entities, the Cedar schema
+  engine.py          the three checks, obligations, Decision
+  grants.py          grants and tokens, stored in the database
+  ledger.py          the hash-chained ledger and verify()
+  app.py             Trellis: issue, revoke, authorize (ledger before the answer)
+  catalog.py         tables and tags (YAML now; contracts and Iceberg REST in M3)
+  db.py              SQLite or Postgres
   mcp_middleware.py  TrellisGuard for MCP tool calls
-  cli.py             the trellis command
-  server.py          HTTP decision server (stub)
-examples/            example policies and catalog
-demo/                docker compose demo (placeholder)
+  cli.py             the trellisd command
+examples/three-keys  the M1 demo config
+demo/                one note per milestone demo
 ```
 
 ## Contributing

@@ -3,21 +3,21 @@
 services:
   trellis:
     build: .
-    command: ["trellis", "serve", "--host", "0.0.0.0", "--port", "8181"]
+    command: ["trellisd", "serve", "--host", "0.0.0.0", "--port", "8181"]
     environment:
-      TRELLIS_LEDGER: /data/trellis-ledger.db
+      TRELLIS_LEDGER: /data/trellisd-ledger.db
     volumes:
       - ./examples:/etc/trellis:ro
       - trellis-data:/data
     ports:
       - "8181:8181"
 
-  # TODO(week 3): MCP server exposing the sample dataset, every tool wrapped in TrellisGuard.
+  # TODO(M5): MCP server exposing the sample dataset, every tool wrapped in TrellisGuard.
   # mcp-server:
   #   build: ./demo
   #   depends_on: [trellis]
 
-  # TODO(week 3): scripted agent that makes one allowed, one masked and one denied call.
+  # TODO(M6): scripted agent that makes one allowed, one masked and one denied call.
   # agent:
   #   build: ./demo
   #   command: ["python", "agent.py"]

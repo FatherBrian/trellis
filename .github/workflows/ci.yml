@@ -15,6 +15,18 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trellis
+          POSTGRES_PASSWORD: trellis
+          POSTGRES_DB: trellis
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U trellis" --health-interval 2s --health-retries 15
+    env:
+      TRELLISD_TEST_POSTGRES: postgresql://trellis:trellis@localhost:5432/trellis
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -30,3 +42,5 @@ jobs:
         run: uv run mypy
       - name: Test
         run: uv run pytest
+      - name: Demo (M1)
+        run: uv run trellisd demo three-keys

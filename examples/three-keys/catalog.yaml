@@ -1,0 +1,30 @@
+# Tables and their tags. M3 reads these from contracts and the Iceberg REST catalog.
+catalog:
+  finance.gl.journal_entries:
+    tags: [finance]
+    columns:
+      entry_id: []
+      amount: []
+      region: []
+      approver_email: [pii]
+  finance.gl.export_ledger:
+    tags: [finance, export_controlled]
+    columns:
+      shipment_id: []
+      eccn: []
+  finance.treasury.cash_positions:
+    tags: [finance]
+    columns:
+      account: []
+      balance: []
+  hr.payroll:
+    tags: [hr, pii]
+    columns:
+      employee: []
+      salary: []
+  quality.inspections:
+    tags: [quality]
+    columns:
+      inspection_id: []
+      result: []
+      inspector_email: [pii]

@@ -1,62 +1,140 @@
 from __future__ import annotations
 
-import sqlite3
+import json
 from pathlib import Path
 
 from click.testing import CliRunner
 
-from trellis import Authorizer, GrantStore, Ledger, Principal
-from trellis.cli import main
+from trellisd.cli import main, parse_duration
 
-from conftest import ALICE, EXAMPLES, JOURNAL
-
-
-def _ledger_with_one_event(path: Path, authorizer: Authorizer, grants: GrantStore) -> str:
-    issued = grants.issue(human=ALICE, agent="report-bot", task="variance", scope={"finance"})
-    principal = Principal.from_grant(issued.grant)
-    with Ledger(path) as ledger:
-        decision = authorizer.authorize(principal, "read", JOURNAL)
-        return ledger.record(principal, "read", JOURNAL, decision).event_id
+from conftest import THREE_KEYS
 
 
-def test_trace_explain_and_verify(
-    tmp_path: Path, authorizer: Authorizer, grants: GrantStore
-) -> None:
-    db = tmp_path / "ledger.db"
-    event_id = _ledger_with_one_event(db, authorizer, grants)
-    runner = CliRunner()
+def run(*args: str) -> tuple[int, str]:
+    result = CliRunner().invoke(main, list(args), catch_exceptions=False)
+    return result.exit_code, result.output
 
-    trace = runner.invoke(
-        main,
-        ["trace", "--ledger", str(db), "--agent", "report-bot", "--for", ALICE, "--since", "1d"],
+
+def test_demo_three_keys() -> None:
+    code, out = run("demo", "three-keys", "--config", str(THREE_KEYS))
+    assert code == 0
+    assert "read hr.payroll" in out
+    assert "may never touch export_controlled" in out
+    assert "refused: report-bot's ceiling doesn't include export_controlled" in out
+    assert "inspection_id = 'INS-1042'" in out
+    assert "was revoked by ana@example.com" in out
+    assert "chain verified" in out
+
+
+def test_issue_check_list_revoke_verify_trace(tmp_path: Path) -> None:
+    db = f"sqlite:///{tmp_path}/t.db"
+    base = ("--config", str(THREE_KEYS), "--db", db)
+    code, out = run(
+        "grant",
+        "issue",
+        *base,
+        "--person",
+        "ana@example.com",
+        "--agent",
+        "report-bot",
+        "--task",
+        "Q3 close",
+        "--scope",
+        "finance",
+        "--json",
     )
-    assert trace.exit_code == 0, trace.output
-    assert event_id in trace.output
-    assert "masked: approver_email, part_number" in trace.output
+    assert code == 0
+    issued = json.loads(out)
+    token, gid = issued["token"], issued["grant"]["id"]
 
-    explain = runner.invoke(main, ["explain", event_id, "--ledger", str(db)])
-    assert explain.exit_code == 0, explain.output
-    assert "finance-read" in explain.output
-    assert '"log": "required"' in explain.output
+    code, out = run("check", *base, "--token", token, "read", "finance.gl.journal_entries")
+    assert code == 0
+    assert "ALLOW" in out
+    assert "masked approver_email" in out
 
-    verify = runner.invoke(main, ["ledger", "verify", "--ledger", str(db)])
-    assert verify.exit_code == 0
-    assert "chain intact" in verify.output
+    code, out = run("check", *base, "--grant", gid, "read", "hr.payroll")
+    assert code == 1
+    assert "DENY" in out
+    assert "the task scope" in out
 
-    conn = sqlite3.connect(db)
-    conn.execute("UPDATE ledger SET hash = 'f00d' WHERE seq = 1")
-    conn.commit()
-    conn.close()
-    assert runner.invoke(main, ["ledger", "verify", "--ledger", str(db)]).exit_code == 1
+    code, out = run("check", *base, "--grant", gid, "--json", "read", "hr.payroll")
+    assert json.loads(out)["denied_by"] == ["task"]
+
+    code, out = run("grant", "list", *base)
+    assert gid in out
+    assert "live until" in out
+
+    code, out = run("grant", "revoke", *base, gid, "--by", "ana@example.com")
+    assert "Revoked" in out
+    code, out = run("grant", "list", *base)
+    assert "revoked" in out
+
+    code, out = run("ledger", "verify", "--db", db)
+    assert code == 0
+    assert "chain intact" in out
+
+    code, out = run("trace", "--db", db, "--agent", "report-bot")
+    assert "grant.issued" in out
+    assert "DENY" in out
 
 
-def test_policy_check() -> None:
-    result = CliRunner().invoke(main, ["policy", "check", str(EXAMPLES / "policies.yaml")])
-    assert result.exit_code == 0
-    assert "1 agents, 1 policies" in result.output
+def test_refused_grant_exits_nonzero(tmp_path: Path) -> None:
+    code, out = run(
+        "grant",
+        "issue",
+        "--config",
+        str(THREE_KEYS),
+        "--db",
+        f"sqlite:///{tmp_path}/t.db",
+        "--person",
+        "ana@example.com",
+        "--agent",
+        "report-bot",
+        "--task",
+        "t",
+        "--scope",
+        "export_controlled",
+    )
+    assert code != 0
+    assert "grant refused" in out
 
 
-def test_unbuilt_commands_say_so() -> None:
+def test_purpose_run(tmp_path: Path) -> None:
+    code, out = run(
+        "grant",
+        "run",
+        "--config",
+        str(THREE_KEYS),
+        "--db",
+        f"sqlite:///{tmp_path}/t.db",
+        "--purpose",
+        "inspection-review",
+        "--agent",
+        "inspector-bot",
+        "--record",
+        "INS-9",
+        "--by",
+        "qms",
+    )
+    assert code == 0
+    assert "triggered by inspection INS-9" in out
+
+
+def test_compile_validate_schema() -> None:
+    code, out = run("compile", "--config", str(THREE_KEYS))
+    assert '@id("ceiling.report-bot.never")' in out
+    code, out = run("validate", "--config", str(THREE_KEYS))
+    assert code == 0
+    assert "Cedar validates" in out
+    code, out = run("schema")
+    assert "Trellis config" in out
+
+
+def test_needs_config() -> None:
     result = CliRunner().invoke(main, ["grant", "list"])
     assert result.exit_code != 0
-    assert "not implemented yet" in result.output
+    assert "--config" in result.output
+
+
+def test_parse_duration() -> None:
+    assert parse_duration("90m").total_seconds() == 5400

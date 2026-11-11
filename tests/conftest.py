@@ -1,46 +1,44 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import os
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from trellis import Authorizer, GrantStore, IssuedGrant, Ledger, YamlCatalog, load_policies
+from trellisd import Trellis, load_config
+from trellisd.db import Database
 
-EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+ROOT = Path(__file__).resolve().parent.parent
+THREE_KEYS = ROOT / "examples" / "three-keys"
 NOW = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)
-ALICE = "alice@example.com"
-BOB = "bob@example.com"
+ANA = "ana@example.com"
 JOURNAL = "finance.gl.journal_entries"
+EXPORT = "finance.gl.export_ledger"
+PAYROLL = "hr.payroll"
+TREASURY = "finance.treasury.cash_positions"
+INSPECTIONS = "quality.inspections"
 
 
 @pytest.fixture
-def grants() -> GrantStore:
-    return GrantStore()
+def trellis() -> Iterator[Trellis]:
+    t = Trellis(load_config(THREE_KEYS), Database(":memory:"))
+    yield t
+    t.close()
+
+
+def reset_postgres(url: str) -> None:
+    with Database(url) as db:
+        db.execute_script(
+            "DROP TABLE IF EXISTS trellis_ledger; DROP TABLE IF EXISTS trellis_grants;"
+        )
 
 
 @pytest.fixture
-def authorizer(grants: GrantStore) -> Authorizer:
-    return Authorizer(
-        catalog=YamlCatalog.from_file(EXAMPLES / "catalog.yaml"),
-        policies=load_policies(EXAMPLES / "policies.yaml"),
-        grants=grants,
-    )
-
-
-@pytest.fixture
-def ledger() -> Ledger:
-    return Ledger(":memory:")
-
-
-def issue(
-    grants: GrantStore, scope: set[str], human: str = ALICE, ttl_minutes: int = 60
-) -> IssuedGrant:
-    return grants.issue(
-        human=human,
-        agent="report-bot",
-        task="month-end variance report",
-        scope=scope,
-        ttl=timedelta(minutes=ttl_minutes),
-        now=NOW,
-    )
+def postgres_url() -> str:
+    url = os.environ.get("TRELLISD_TEST_POSTGRES")
+    if not url:
+        pytest.skip("set TRELLISD_TEST_POSTGRES to run the Postgres tests")
+    reset_postgres(url)
+    return url

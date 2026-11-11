@@ -3,10 +3,10 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-# Distribution name: the bare "trellis" is taken on PyPI. Import name and CLI stay "trellis".
+# Distribution, import and CLI name: trellisd. The project is called Trellis.
 # GitHub organisation and trademark checks are still open.
-name = "trellis-authz"
-version = "0.0.1"
+name = "trellisd"
+version = "0.1.0.dev0"
 description = "Delegated access control and a tamper-evident audit ledger for AI agents."
 readme = "README.md"
 license = "Apache-2.0"
@@ -29,36 +29,43 @@ dependencies = [
     "pydantic>=2.6",
     "pyyaml>=6.0",
     "click>=8.1",
+    # Cedar is the policy evaluator (Python bindings to the Rust cedar-policy crate).
+    "cedarpy>=4.12,<5",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
+    "hypothesis>=6",
     "ruff>=0.6",
     "mypy>=1.10",
     "types-PyYAML",
 ]
-# TODO(week 2): pin and wire these up.
 postgres = ["psycopg[binary]>=3.1"]
 otel = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25"]
 parquet = ["pyarrow>=15"]
-# TODO(week 3): the MCP middleware targets the official Python MCP SDK.
+# The MCP middleware and Reef (M5) target the official Python MCP SDK.
 mcp = ["mcp>=1.2"]
 
 [project.scripts]
-trellis = "trellis.cli:main"
+trellisd = "trellisd.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/OWNER/trellis"
 Issues = "https://github.com/OWNER/trellis/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/trellis"]
+packages = ["src/trellisd"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# The demo configs ship inside the wheel so `trellisd demo` works after `pip install`.
+"examples/three-keys" = "trellisd/_examples/three-keys"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers"
+markers = ["postgres: needs TRELLISD_TEST_POSTGRES (a Postgres URL)"]
 
 [tool.ruff]
 line-length = 100
@@ -71,7 +78,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "PT"]
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["trellis"]
+known-first-party = ["trellisd"]
 known-local-folder = ["conftest"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -81,9 +88,9 @@ known-local-folder = ["conftest"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-packages = ["trellis"]
+packages = ["trellisd"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["yaml", "yaml.*"]
+module = ["yaml", "yaml.*", "cedarpy", "cedarpy.*", "psycopg", "psycopg.*"]
 ignore_missing_imports = true

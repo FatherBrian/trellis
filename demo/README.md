@@ -1,15 +1,9 @@
-# Trellis demo (placeholder)
+# Trellis demos
 
-TODO(week 3): `docker compose up` starts a sample dataset and an agent. The run shows:
+Each milestone ends with a demo that runs start to finish.
 
-1. PII in `finance.gl.journal_entries` is masked for report-bot.
-2. A request for the export-controlled `part_number` column is denied.
-3. `trellis trace` and `trellis explain` show what happened and why.
+| Milestone | Demo | Run |
+|---|---|---|
+| M1 | [Three keys](M1.md): every call needs three yeses | `trellisd demo three-keys` |
 
-Planned contents:
-
-- `seed/`: the sample dataset and `catalog.yaml`
-- `agent.py`: a scripted agent calling a Trellis-guarded MCP server
-- `server.py`: the MCP server with `TrellisGuard` around its tools
-
-Goal: a stranger runs it from a clean machine in under five minutes.
+The `docker compose up` quickstart arrives in M6.

@@ -1,0 +1,10 @@
+# The directory. In M4 an identity provider replaces this file.
+people:
+  ana@example.com:
+    groups: [finance-analysts]
+    attributes: {region: emea}
+  tom@example.com:
+    groups: [treasury]
+    attributes: {region: amer}
+  quality-lead@example.com:
+    groups: [quality]

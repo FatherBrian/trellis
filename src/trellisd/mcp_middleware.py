@@ -6,36 +6,33 @@ provider reads the bearer token from the current request context.
 
 Usage::
 
-    guard = TrellisGuard(authorizer, ledger, token_provider=current_request_token)
+    guard = TrellisGuard(trellis, token_provider=current_request_token)
 
     @mcp.tool()
     @guard.tool(action="read", resource="finance.gl.journal_entries")
     def journal_entries(limit: int = 100) -> list[dict]:
         ...
 
-The ledger write happens before the tool runs, so a denied or crashed call is still on
-record. On an allow, masked columns are redacted from dict or list-of-dict results.
+Every call goes through Trellis's three checks, and the ledger write happens before the
+tool runs, so a denied or crashed call is still on record. On an allow, masked columns are
+redacted from dict or list-of-dict results. Reef (M5) builds on this guard.
 
-TODO(week 3): ship a ready-made ``token_provider`` for ``mcp.server.fastmcp`` and wire the
-guard into FastMCP tool registration so ``@guard.tool`` is the only decorator needed.
-TODO(week 3): apply the decision's row filter when the tool runs SQL.
+Tools that run SQL can read ``decision.row_filter`` through ``guard.current`` (M3 applies
+it in the Iceberg enforcer).
 """
 
 from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any, ParamSpec, TypeVar, cast
 
-from trellis.decision import Authorizer, Decision, Principal, RequestContext
-from trellis.grants import GrantError
-from trellis.ledger import Ledger
+from trellisd.app import Trellis
+from trellisd.engine import MASK, Decision
 
 P = ParamSpec("P")
 R = TypeVar("R")
-
-MASK = "***"
 
 ResourceSpec = str | Callable[..., str]
 
@@ -43,13 +40,13 @@ ResourceSpec = str | Callable[..., str]
 class TrellisDenied(PermissionError):
     """Raised instead of running the tool when Trellis denies the call."""
 
-    def __init__(self, decision: Decision, event_id: str | None = None) -> None:
+    def __init__(self, decision: Decision) -> None:
         super().__init__(decision.reason)
         self.decision = decision
-        self.event_id = event_id
+        self.event_id = decision.event_id
 
 
-def redact(result: Any, masks: tuple[str, ...]) -> Any:
+def redact(result: Any, masks: Collection[str]) -> Any:
     """Replace masked columns in a row or list of rows. Other shapes pass through untouched."""
     if not masks:
         return result
@@ -61,29 +58,15 @@ def redact(result: Any, masks: tuple[str, ...]) -> Any:
 
 
 class TrellisGuard:
-    def __init__(
-        self,
-        authorizer: Authorizer,
-        ledger: Ledger,
-        token_provider: Callable[[], str],
-    ) -> None:
-        self.authorizer = authorizer
-        self.ledger = ledger
+    def __init__(self, trellis: Trellis, token_provider: Callable[[], str]) -> None:
+        self.trellis = trellis
         self.token_provider = token_provider
 
     def check(self, action: str, resource: str, columns: tuple[str, ...] | None = None) -> Decision:
         """Authorize and record one call. Raises ``TrellisDenied`` on a deny."""
-        try:
-            grant = self.authorizer.grants.resolve(self.token_provider())
-        except GrantError as exc:
-            # TODO(week 2): record rejected tokens too, under an "unknown" principal.
-            raise TrellisDenied(Decision(allowed=False, reason=str(exc))) from exc
-        principal = Principal.from_grant(grant)
-        ctx = RequestContext(columns=columns)
-        decision = self.authorizer.authorize(principal, action, resource, ctx)
-        event = self.ledger.record(principal, action, resource, decision, ctx)
+        decision = self.trellis.authorize(self.token_provider(), action, resource, columns)
         if not decision.allowed:
-            raise TrellisDenied(decision, event.event_id)
+            raise TrellisDenied(decision)
         return decision
 
     def tool(
@@ -111,7 +94,7 @@ class TrellisGuard:
                 async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
                     name, cols = resolve(args, kwargs)
                     decision = self.check(action, name, cols)
-                    return redact(await fn(*args, **kwargs), decision.masks)
+                    return redact(await fn(*args, **kwargs), decision.masked)
 
                 return cast(Callable[P, R], async_wrapper)
 
@@ -119,7 +102,7 @@ class TrellisGuard:
             def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
                 name, cols = resolve(args, kwargs)
                 decision = self.check(action, name, cols)
-                return cast(R, redact(fn(*args, **kwargs), decision.masks))
+                return cast(R, redact(fn(*args, **kwargs), decision.masked))
 
             return wrapper
 
