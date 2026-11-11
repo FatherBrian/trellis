@@ -138,3 +138,77 @@ def test_needs_config() -> None:
 
 def test_parse_duration() -> None:
     assert parse_duration("90m").total_seconds() == 5400
+
+
+def test_demo_who_allowed_this() -> None:
+    code, out = run("demo", "who-allowed-this", "--config", str(THREE_KEYS))
+    assert code == 0
+    assert "ana@example.com let report-bot act for them: Q3 close" in out
+    assert "✗ the task scope" in out
+    assert "the same decision, check for check" in out
+    assert "event 4 was changed after it was written" in out
+    assert "events 6 to 15 are missing from the end" in out
+
+
+def test_trace_explain_checkpoint_verify_export(tmp_path: Path) -> None:
+    db = f"sqlite:///{tmp_path}/t.db"
+    key = str(tmp_path / "k.pem")
+    base = ("--config", str(THREE_KEYS), "--db", db)
+    code, out = run(
+        "--key",
+        key,
+        "grant",
+        "issue",
+        *base,
+        "--person",
+        "ana@example.com",
+        "--agent",
+        "report-bot",
+        "--task",
+        "Q3 close",
+        "--scope",
+        "finance",
+        "--json",
+    )
+    token = json.loads(out)["token"]
+    code, out = run("--key", key, "check", *base, "--token", token, "--json", "read", "hr.payroll")
+    event_id = json.loads(out)["event_id"]
+
+    code, out = run("trace", "--db", db, event_id)
+    assert code == 0
+    assert "Who allowed it" in out
+    assert "signed by key" in out
+
+    code, out = run("explain", *base, event_id, "--replay")
+    assert code == 0
+    assert "check for check" in out
+    assert "unchanged" in out
+
+    cp_file = tmp_path / "cp.json"
+    code, out = run("--key", key, "ledger", "checkpoint", "--db", db, "--out", str(cp_file))
+    assert code == 0
+    assert json.loads(cp_file.read_text())["seq"] == 2
+
+    code, out = run("ledger", "verify", "--db", db, "--checkpoint", str(cp_file))
+    assert code == 0
+    assert "against the checkpoint at event 2" in out
+
+    import sqlite3
+
+    with sqlite3.connect(tmp_path / "t.db") as conn:
+        conn.execute("DELETE FROM trellis_ledger WHERE seq = 2")
+    code, out = run("ledger", "verify", "--db", db, "--checkpoint", str(cp_file))
+    assert code == 1
+    assert "missing from the end" in out
+
+    result = CliRunner().invoke(main, ["ledger", "export", "--db", db, "--console"])
+    assert result.exit_code == 0
+    assert '"trellis.kind": "grant.issued"' in result.output
+    # The deleted event stays queued: the outbox noticed it went missing.
+    assert "sent 1, 1 still queued" in result.output
+
+
+def test_trace_unknown_event(tmp_path: Path) -> None:
+    result = CliRunner().invoke(main, ["trace", "--db", f"sqlite:///{tmp_path}/t.db", "ev_x"])
+    assert result.exit_code != 0
+    assert "no event ev_x" in result.output

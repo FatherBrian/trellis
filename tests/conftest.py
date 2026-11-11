@@ -21,18 +21,44 @@ TREASURY = "finance.treasury.cash_positions"
 INSPECTIONS = "quality.inspections"
 
 
+@pytest.fixture(autouse=True)
+def _signing_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the CLI's default signing key out of the working folder."""
+    monkeypatch.setenv("TRELLISD_KEY", str(tmp_path / "signing.key"))
+
+
+@pytest.fixture(params=["sqlite", pytest.param("postgres", marks=pytest.mark.postgres)])
+def db_url(request: pytest.FixtureRequest) -> str:
+    """One shared suite: every test that takes this runs on SQLite and on Postgres."""
+    if request.param == "sqlite":
+        return ":memory:"
+    url = os.environ.get("TRELLISD_TEST_POSTGRES")
+    if not url:
+        pytest.skip("set TRELLISD_TEST_POSTGRES to run the Postgres tests")
+    reset_postgres(url)
+    return url
+
+
 @pytest.fixture
-def trellis() -> Iterator[Trellis]:
-    t = Trellis(load_config(THREE_KEYS), Database(":memory:"))
+def trellis(db_url: str) -> Iterator[Trellis]:
+    t = Trellis(load_config(THREE_KEYS), Database(db_url))
     yield t
     t.close()
 
 
+TABLES = (
+    "trellis_ledger",
+    "trellis_grants",
+    "trellis_keys",
+    "trellis_checkpoints",
+    "trellis_outbox",
+    "trellis_snapshots",
+)
+
+
 def reset_postgres(url: str) -> None:
     with Database(url) as db:
-        db.execute_script(
-            "DROP TABLE IF EXISTS trellis_ledger; DROP TABLE IF EXISTS trellis_grants;"
-        )
+        db.execute_script("".join(f"DROP TABLE IF EXISTS {t};" for t in TABLES))
 
 
 @pytest.fixture

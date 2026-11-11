@@ -10,3 +10,6 @@ build/
 .coverage
 *.db
 *.db-journal
+
+# Signing keys (made on first use)
+*.key

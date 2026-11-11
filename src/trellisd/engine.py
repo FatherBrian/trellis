@@ -38,8 +38,12 @@ class CheckResult(BaseModel):
     #: Who or what this check speaks for, in words: "ana@example.com's access".
     label: str
     allowed: bool
-    #: The Cedar policies that decided it (by @id).
+    #: The Cedar policies that decided it (by @id): the permits behind a yes, or the forbid
+    #: behind a no. Empty when nothing permitted the call.
     policies: tuple[str, ...] = ()
+    #: The policies in this check's set that applied to this principal at all, so a no
+    #: with no deciding policy can still name the policy that didn't cover the call.
+    considered: tuple[str, ...] = ()
     reason: str = ""
 
 
@@ -98,8 +102,7 @@ class Engine:
         self.ceiling_set = self.compiler.ceiling_policies()
         self._subject_cedar = self.subject_set.cedar()
         self._ceiling_cedar = self.ceiling_set.cedar()
-        self._entities = self.compiler.entities()
-        self._known = {(e["uid"]["type"], e["uid"]["id"]) for e in self._entities}
+        self._entity_map = {(e["uid"]["type"], e["uid"]["id"]): e for e in self.compiler.entities()}
 
     # -- public ----------------------------------------------------------------------------
 
@@ -205,7 +208,7 @@ class Engine:
             issued_at=_EPOCH,
             expires_at=_EPOCH,
         )
-        entities = self._entities + self._extra_entities(probe, info, [])
+        entities = self._call_entities(probe, info, [])
         res = cedarpy.is_authorized(
             {
                 "principal": f"Person::{_q(person)}",
@@ -233,41 +236,59 @@ class Engine:
             ("task", "the task scope"),
         ]
 
-    def _extra_entities(
+    def _call_entities(
         self, grant: Grant, info: TableInfo, cols: list[str]
     ) -> list[dict[str, Any]]:
-        extra: list[dict[str, Any]] = [
-            {"uid": {"type": "Grant", "id": grant.id}, "attrs": {}, "parents": []}
+        """The config's entities, with this call's grant, and the table and its columns
+        exactly as the catalog classifies them now (the catalog wins over the config)."""
+
+        def ent(
+            type_: str,
+            id_: str,
+            attrs: dict[str, Any] | None = None,
+            parents: list[tuple[str, str]] | None = None,
+        ) -> dict[str, Any]:
+            return {
+                "uid": {"type": type_, "id": id_},
+                "attrs": attrs or {},
+                "parents": [{"type": t, "id": i} for t, i in parents or []],
+            }
+
+        prefix = info.name + "."
+        out = [
+            e
+            for k, e in self._entity_map.items()
+            if not (k[0] in ("Table", "Column") and (k[1] == info.name or k[1].startswith(prefix)))
         ]
-        if not grant.is_purpose and ("Person", grant.subject) not in self._known:
-            extra.append(
-                {"uid": {"type": "Person", "id": grant.subject}, "attrs": {}, "parents": []}
-            )
-        if ("Agent", grant.agent) not in self._known:
-            extra.append({"uid": {"type": "Agent", "id": grant.agent}, "attrs": {}, "parents": []})
-        if ("Table", info.name) not in self._known:
-            extra.append(
-                {
-                    "uid": {"type": "Table", "id": info.name},
-                    "attrs": {"tags": sorted(info.tags)},
-                    "parents": [{"type": "Dataset", "id": info.dataset}],
-                }
-            )
-        for col in cols:
-            if ("Column", f"{info.name}.{col}") not in self._known:
-                extra.append(
-                    {
-                        "uid": {"type": "Column", "id": f"{info.name}.{col}"},
-                        "attrs": {"tags": sorted(info.column_tags(col))},
-                        "parents": [{"type": "Table", "id": info.name}],
-                    }
+        out.append(ent("Grant", grant.id))
+        if not grant.is_purpose and ("Person", grant.subject) not in self._entity_map:
+            out.append(ent("Person", grant.subject))
+        if ("Agent", grant.agent) not in self._entity_map:
+            out.append(ent("Agent", grant.agent))
+        parts = info.dataset.split(".")
+        for n in range(1, len(parts) + 1):
+            ds = ".".join(parts[:n])
+            if ("Dataset", ds) not in self._entity_map:
+                parent = [("Dataset", ".".join(parts[: n - 1]))] if n > 1 else []
+                out.append(ent("Dataset", ds, None, parent))
+        out.append(
+            ent("Table", info.name, {"tags": sorted(info.tags)}, [("Dataset", info.dataset)])
+        )
+        for col in dict.fromkeys([*info.columns, *cols]):
+            out.append(
+                ent(
+                    "Column",
+                    f"{info.name}.{col}",
+                    {"tags": sorted(info.column_tags(col))},
+                    [("Table", info.name)],
                 )
-        return extra
+            )
+        return out
 
     def _run_checks(
         self, grant: Grant, action: str, info: TableInfo, cols: list[str], now: datetime | None
     ) -> tuple[list[CheckResult], list[list[CheckResult]], list[PolicyMeta]]:
-        entities = self._entities + self._extra_entities(grant, info, cols)
+        entities = self._call_entities(grant, info, cols)
         resources = [f"Table::{_q(info.name)}"] + [
             f"Column::{_q(f'{info.name}.{c}')}" for c in cols
         ]
@@ -289,7 +310,15 @@ class Engine:
             zip(plan, labels, strict=True)
         ):
             if idx == 2 and inactive:
-                checks.append(CheckResult(name=name, label=label, allowed=False, reason=inactive))
+                checks.append(
+                    CheckResult(
+                        name=name,
+                        label=label,
+                        allowed=False,
+                        considered=(f"grant.{grant.id}",),
+                        reason=inactive,
+                    )
+                )
                 continue
             requests = [
                 {
@@ -311,13 +340,38 @@ class Engine:
                 reason = self._why_not(name, grant, action, info, metas)
             checks.append(
                 CheckResult(
-                    name=name, label=label, allowed=table_res.allowed, policies=pids, reason=reason
+                    name=name,
+                    label=label,
+                    allowed=table_res.allowed,
+                    policies=pids,
+                    considered=self._considered(name, grant, ps),
+                    reason=reason,
                 )
             )
             for i, res in enumerate(results[1:]):
                 if not res.allowed:
                     per_column[i].append(checks[-1])
         return checks, per_column, deciding
+
+    def _considered(self, name: str, grant: Grant, ps: PolicySetText) -> tuple[str, ...]:
+        if name == "person":
+            groups = set(self.config.groups_of(grant.subject))
+            ids = []
+            for rule in self.config.access:
+                for i, who in enumerate(rule.who):
+                    kind, value = who.split(":", 1)
+                    if (kind == "group" and value in groups) or (
+                        kind == "user" and value == grant.subject
+                    ):
+                        ids.append(f"access.{rule.id}" + (f".{i}" if len(rule.who) > 1 else ""))
+            return tuple(ids)
+        if name == "purpose":
+            prefix = f"purpose.{grant.subject}"
+        elif name == "ceiling":
+            prefix = f"ceiling.{grant.agent}"
+        else:
+            prefix = f"grant.{grant.id}"
+        return tuple(m.id for m in ps.meta if m.id == prefix or m.id.startswith(prefix + "."))
 
     def _why_not(
         self, name: str, grant: Grant, action: str, info: TableInfo, metas: list[PolicyMeta]

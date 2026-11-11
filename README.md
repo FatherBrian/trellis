@@ -8,8 +8,9 @@ delegated attribute-based access control (ABAC) with an append-only access ledge
 ships MCP middleware so any MCP tool can adopt it in a few lines. The package, import
 and command are all `trellisd`.
 
-> Status: pre-alpha. M1 (grants on Cedar, the three checks) works and is tested; the
-> ledger v1, contracts and Iceberg, sign-in, Reef and the quickstart follow.
+> Status: pre-alpha. M1 (grants on Cedar, the three checks) and M2 (ledger v1: grant
+> receipts, signed checkpoints, trace and replay, OpenTelemetry) work and are tested;
+> contracts and Iceberg, sign-in, Reef and the quickstart follow.
 > See [docs/roadmap.md](docs/roadmap.md).
 
 ## Why
@@ -41,6 +42,7 @@ and decision lands in a hash-chained ledger before the answer goes out.
 ```bash
 python -m pip install -e .
 trellisd demo three-keys
+trellisd demo who-allowed-this    # trace a deny to its grant, then catch a ledger edit
 ```
 
 ```
@@ -117,12 +119,17 @@ def journal_entries(limit: int = 100) -> list[dict]:
 trellisd grant issue | run | list | revoke
 trellisd check --token <token> read finance.gl.journal_entries
 trellisd compile | validate | schema
-trellisd trace --agent report-bot
-trellisd ledger verify
+trellisd trace [EVENT_ID]            # who allowed this call, or recent events
+trellisd explain EVENT_ID --replay   # re-run it at its recorded version and today's
+trellisd ledger checkpoint --out checkpoint.json
+trellisd ledger verify [--checkpoint checkpoint.json]
+trellisd ledger export [--console]   # OpenTelemetry spans from the outbox
 ```
 
 `--config` (or `TRELLISD_CONFIG`) is a YAML file or directory; `--db` (or `TRELLISD_DB`)
 is `sqlite:///file.db` or a `postgresql://` URL. Grants and the ledger share the database.
+`--key` (or `TRELLISD_KEY`) is the Ed25519 signing key for grant entries and checkpoints,
+made with mode 0600 on first use.
 
 ## Layout
 
@@ -132,13 +139,16 @@ src/trellisd/
   compiler.py        YAML to Cedar: three policy sets, entities, the Cedar schema
   engine.py          the three checks, obligations, Decision
   grants.py          grants and tokens, stored in the database
-  ledger.py          the hash-chained ledger and verify()
+  ledger.py          the hash-chained ledger, outbox, snapshots and verify()
+  signing.py         Ed25519 keys for grant entries and checkpoints
+  trace.py           who allowed this: trace a decision, replay it
+  export.py          the outbox to OpenTelemetry
   app.py             Trellis: issue, revoke, authorize (ledger before the answer)
   catalog.py         tables and tags (YAML now; contracts and Iceberg REST in M3)
   db.py              SQLite or Postgres
   mcp_middleware.py  TrellisGuard for MCP tool calls
   cli.py             the trellisd command
-examples/three-keys  the M1 demo config
+examples/three-keys  the demo config
 demo/                one note per milestone demo
 ```
 

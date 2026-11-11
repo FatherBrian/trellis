@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from trellisd.catalog import Catalog
+from trellisd.catalog import Catalog, table_snapshot
 from trellisd.config import TrellisConfig, load_config
 from trellisd.db import DEFAULT_URL, Cursor, Database
 from trellisd.engine import CheckResult, Decision, Engine
@@ -30,7 +30,8 @@ from trellisd.grants import (
     new_token,
     utcnow,
 )
-from trellisd.ledger import Ledger, LedgerEvent, LedgerUnavailable
+from trellisd.ledger import Ledger, LedgerEvent, LedgerUnavailable, jsonable, snapshot_version
+from trellisd.signing import Signer
 
 
 class Trellis:
@@ -39,16 +40,24 @@ class Trellis:
         config: TrellisConfig,
         db: Database | str = DEFAULT_URL,
         catalog: Catalog | None = None,
+        signer: Signer | None = None,
     ) -> None:
+        """``signer`` signs grant entries and checkpoints; without one, Trellis makes a
+        throwaway key (fine for tests, not for a ledger you'll keep)."""
         self.config = config
         self.db = db if isinstance(db, Database) else Database(db)
+        self.signer = signer or Signer.generate()
         self.grants = GrantStore(self.db)
-        self.ledger = Ledger(self.db)
+        self.ledger = Ledger(self.db, self.signer)
         self.engine = Engine(config, catalog)
+        #: The version every decision records, so it can be replayed against this config.
+        self.config_version = self.ledger.save_snapshot("config", jsonable(config))
 
     @classmethod
-    def open(cls, *config_paths: str | Path, db_url: str = DEFAULT_URL) -> Trellis:
-        return cls(load_config(*config_paths), db_url)
+    def open(
+        cls, *config_paths: str | Path, db_url: str = DEFAULT_URL, signer: Signer | None = None
+    ) -> Trellis:
+        return cls(load_config(*config_paths), db_url, signer=signer)
 
     def close(self) -> None:
         self.db.close()
@@ -261,6 +270,16 @@ class Trellis:
     def _record(self, decision: Decision, grant: Grant | None, now: datetime | None) -> Decision:
         body = decision.model_dump(mode="json", exclude={"event_id"})
         body["receipt"] = grant.receipt if grant else None
+        body["config_version"] = self.config_version
+        info = self.engine.catalog.table(decision.resource)
+        table = jsonable(table_snapshot(info)) if info else None
+
+        def store_snapshot(cur: Cursor, _event: LedgerEvent) -> None:
+            if table is not None:
+                self.ledger.save_snapshot("table", table, cur)
+
+        if table is not None:
+            body["catalog_snapshot"] = snapshot_version(table)
         try:
             event = self.ledger.append(
                 "decision",
@@ -269,6 +288,7 @@ class Trellis:
                 grant_id=decision.grant_id or "",
                 body=body,
                 ts=now,
+                on_write=store_snapshot,
             )
         except LedgerUnavailable as exc:
             return decision.model_copy(

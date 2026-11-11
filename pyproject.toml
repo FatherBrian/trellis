@@ -31,18 +31,25 @@ dependencies = [
     "click>=8.1",
     # Cedar is the policy evaluator (Python bindings to the Rust cedar-policy crate).
     "cedarpy>=4.12,<5",
+    # Ed25519 signatures on grant entries and ledger checkpoints.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
     "hypothesis>=6",
+    "opentelemetry-sdk>=1.25",
     "ruff>=0.6",
     "mypy>=1.10",
     "types-PyYAML",
 ]
 postgres = ["psycopg[binary]>=3.1"]
-otel = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25"]
+otel = [
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-http>=1.25",
+]
 parquet = ["pyarrow>=15"]
 # The MCP middleware and Reef (M5) target the official Python MCP SDK.
 mcp = ["mcp>=1.2"]

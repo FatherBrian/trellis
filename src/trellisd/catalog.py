@@ -7,7 +7,7 @@ catalog behind the same ``Catalog`` protocol, merged by the resolver.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from trellisd.config import Tags, TrellisConfig
 
@@ -47,6 +47,52 @@ class Catalog(Protocol):
     def table(self, name: str) -> TableInfo | None: ...
 
     def tables(self) -> list[str]: ...
+
+
+def table_snapshot(info: TableInfo) -> dict[str, Any]:
+    """What the ledger keeps of a table's classification at decision time (for replay)."""
+    return {
+        "name": info.name,
+        "tags": sorted(info.tags),
+        "columns": {c: sorted(t) for c, t in sorted(info.columns.items())},
+        "provenance": {
+            tag: [{"source": s.source, "version": s.version} for s in srcs]
+            for tag, srcs in sorted(info.provenance.items())
+        },
+        "contract": info.contract,
+        "contract_version": info.contract_version,
+        "owner": info.owner,
+        "stale": info.stale,
+    }
+
+
+def table_from_snapshot(body: dict[str, Any]) -> TableInfo:
+    return TableInfo(
+        name=body["name"],
+        tags=frozenset(body["tags"]),
+        columns={c: frozenset(t) for c, t in body["columns"].items()},
+        provenance={
+            tag: tuple(TagSourceInfo(s["source"], s.get("version", "")) for s in srcs)
+            for tag, srcs in body.get("provenance", {}).items()
+        },
+        contract=body.get("contract"),
+        contract_version=body.get("contract_version"),
+        owner=body.get("owner"),
+        stale=bool(body.get("stale", False)),
+    )
+
+
+class SnapshotCatalog:
+    """Tables exactly as a past decision saw them, for replay."""
+
+    def __init__(self, tables: list[TableInfo]) -> None:
+        self._tables = {t.name: t for t in tables}
+
+    def table(self, name: str) -> TableInfo | None:
+        return self._tables.get(name)
+
+    def tables(self) -> list[str]:
+        return sorted(self._tables)
 
 
 class ConfigCatalog:

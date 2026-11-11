@@ -42,5 +42,7 @@ jobs:
         run: uv run mypy
       - name: Test
         run: uv run pytest
-      - name: Demo (M1)
-        run: uv run trellisd demo three-keys
+      - name: Demos
+        run: |
+          uv run trellisd demo three-keys
+          uv run trellisd demo who-allowed-this
