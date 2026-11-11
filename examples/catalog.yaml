@@ -1,0 +1,27 @@
+# YAML catalog fallback, for teams without Unity Catalog OSS and for the demo.
+
+humans:
+  alice@example.com:
+    groups: [finance-analysts]
+    clearances: [finance, pii, export_controlled]
+  bob@example.com:
+    groups: [engineering]
+    clearances: [engineering]
+
+resources:
+  finance.gl.journal_entries:
+    tags: [finance]
+    columns:
+      entry_id: []
+      posted_on: []
+      amount: [finance]
+      approver_email: [finance, pii]
+      part_number: [finance, export_controlled]
+  eng.parts.bom:
+    tags: [engineering, export_controlled]
+    columns:
+      part_number: [export_controlled]
+      description: []
+  scratch.unclassified:
+    columns:
+      anything: []

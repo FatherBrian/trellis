@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+# Working name. Check PyPI and trademark availability before the first publish.
+name = "writ"
+version = "0.0.1"
+description = "Delegated access control and a tamper-evident audit ledger for AI agents."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Writ contributors" }]
+keywords = ["ai-agents", "mcp", "abac", "access-control", "audit", "data-governance"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-PyYAML",
+]
+# TODO(week 2): pin and wire these up.
+postgres = ["psycopg[binary]>=3.1"]
+otel = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25"]
+parquet = ["pyarrow>=15"]
+# TODO(week 3): the MCP middleware targets the official Python MCP SDK.
+mcp = ["mcp>=1.2"]
+
+[project.scripts]
+writ = "writ.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/writ"
+Issues = "https://github.com/OWNER/writ/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/writ"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "PT"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["writ"]
+known-local-folder = ["conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["writ"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["yaml", "yaml.*"]
+ignore_missing_imports = true

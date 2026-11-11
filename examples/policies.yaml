@@ -1,0 +1,23 @@
+# Writ example policies. Validate with: writ policy check examples/policies.yaml
+#
+# Effective access = human access ∩ agent ceiling ∩ task scope. Anything outside that
+# intersection is denied. Inside it, a policy must allow the action, and its conditions
+# and annotations shape the answer.
+
+agents:
+  report-bot:
+    owner: group:finance-platform
+    # The most this agent may ever touch. Note: no export_controlled, ever.
+    ceiling: [finance, pii]
+
+policies:
+  - id: finance-read
+    description: Finance analysts may have report-bot read finance tables, with PII masked.
+    principal: { agent: report-bot, on_behalf_of: group:finance-analysts }
+    action: [read, query]
+    resource: { tags: [finance] }
+    conditions:
+      - grant.scope contains finance
+      - column.tags excludes pii
+    annotations:
+      log: required
