@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from moat.catalog import Tags
+from trellis.catalog import Tags
 
 DEFAULT_TTL = timedelta(hours=1)
 MAX_TTL = timedelta(hours=24)
@@ -119,7 +119,7 @@ class GrantStore:
             issued_at=now,
             expires_at=now + ttl,
         )
-        token = f"moat_{secrets.token_urlsafe(32)}"
+        token = f"trellis_{secrets.token_urlsafe(32)}"
         self._grants[grant.id] = grant
         self._tokens[_hash_token(token)] = grant.id
         return IssuedGrant(grant=grant, token=token)

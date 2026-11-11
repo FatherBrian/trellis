@@ -16,8 +16,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from moat.catalog import Tags
-from moat.grants import AgentProfile
+from trellis.catalog import Tags
+from trellis.grants import AgentProfile
 
 Operator = Literal["contains", "excludes"]
 

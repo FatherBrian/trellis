@@ -1,21 +1,21 @@
-# Moat demo. Placeholder: the services below are sketched for week 3 and do not run yet.
+# Trellis demo. Placeholder: the services below are sketched for week 3 and do not run yet.
 #   docker compose up
 services:
-  moat:
+  trellis:
     build: .
-    command: ["moat", "serve", "--host", "0.0.0.0", "--port", "8181"]
+    command: ["trellis", "serve", "--host", "0.0.0.0", "--port", "8181"]
     environment:
-      MOAT_LEDGER: /data/moat-ledger.db
+      TRELLIS_LEDGER: /data/trellis-ledger.db
     volumes:
-      - ./examples:/etc/moat:ro
-      - moat-data:/data
+      - ./examples:/etc/trellis:ro
+      - trellis-data:/data
     ports:
       - "8181:8181"
 
-  # TODO(week 3): MCP server exposing the sample dataset, every tool wrapped in MoatGuard.
+  # TODO(week 3): MCP server exposing the sample dataset, every tool wrapped in TrellisGuard.
   # mcp-server:
   #   build: ./demo
-  #   depends_on: [moat]
+  #   depends_on: [trellis]
 
   # TODO(week 3): scripted agent that makes one allowed, one masked and one denied call.
   # agent:
@@ -24,4 +24,4 @@ services:
   #   depends_on: [mcp-server]
 
 volumes:
-  moat-data:
+  trellis-data:

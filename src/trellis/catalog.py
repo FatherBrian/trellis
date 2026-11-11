@@ -1,6 +1,6 @@
-"""Where Moat learns what data is tagged with and what humans may see.
+"""Where Trellis learns what data is tagged with and what humans may see.
 
-Moat does not own data classification or identity. It reads tags from a catalog
+Trellis does not own data classification or identity. It reads tags from a catalog
 (Unity Catalog OSS first, with a YAML file as the fallback) and a human's
 clearances from the same source or an IdP.
 """

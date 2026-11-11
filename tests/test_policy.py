@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from moat import PolicyError, load_policies
+from trellis import PolicyError, load_policies
 
 from conftest import EXAMPLES
 

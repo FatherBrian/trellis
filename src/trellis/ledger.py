@@ -25,8 +25,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from moat.decision import Decision, Principal, RequestContext
-from moat.grants import utcnow
+from trellis.decision import Decision, Principal, RequestContext
+from trellis.grants import utcnow
 
 GENESIS_HASH = "0" * 64
 

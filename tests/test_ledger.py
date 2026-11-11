@@ -7,7 +7,7 @@ import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
-from moat import Authorizer, GrantStore, Ledger, Principal, RequestContext
+from trellis import Authorizer, GrantStore, Ledger, Principal, RequestContext
 
 from conftest import JOURNAL, NOW, issue
 
@@ -83,7 +83,7 @@ def test_recomputing_one_hash_is_not_enough(
     tmp_path: Path, authorizer: Authorizer, grants: GrantStore
 ) -> None:
     """A forger who fixes the edited event's hash still breaks the next link."""
-    from moat.ledger import chain_hash
+    from trellis.ledger import chain_hash
 
     db = tmp_path / "ledger.db"
     _fill(db, authorizer, grants)

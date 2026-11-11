@@ -8,8 +8,8 @@ Roughly 3–4 weeks of evenings. `TODO(week N)` comments in the code mark where 
 - Persist grants (same database as the ledger) and record issue and revoke as events.
 - Opaque or signed tokens; decide how grants relate to MCP's enterprise-managed
   authorization extension.
-- `moat grant issue | list | revoke`.
-- HTTP decision server (`moat serve`).
+- `trellis grant issue | list | revoke`.
+- HTTP decision server (`trellis serve`).
 - Row filter templating; explicit deny policies if needed.
 
 ## Week 2: ledger and trace CLI
@@ -17,7 +17,7 @@ Roughly 3–4 weeks of evenings. `TODO(week N)` comments in the code mark where 
 - Postgres backend; OpenTelemetry span per decision; Parquet export.
 - Signed checkpoints of the head hash so truncation is detectable.
 - Record rejected tokens.
-- Richer `moat trace` (grouping, counts) and `moat explain` (drift against current policy).
+- Richer `trellis trace` (grouping, counts) and `trellis explain` (drift against current policy).
 
 ## Week 3: MCP middleware and demo
 
@@ -29,7 +29,7 @@ Roughly 3–4 weeks of evenings. `TODO(week N)` comments in the code mark where 
 
 ## Open questions
 
-- Moat (package moat-authz) is the chosen name; GitHub organisation and trademark checks are still open.
+- Trellis (package trellis-authz) is the chosen name; GitHub organisation and trademark checks are still open.
 - Should grants follow MCP's enterprise-managed authorization extension directly, or wrap it?
 - Python-only core, or a Go decision core once latency matters?
 - Does the ledger record every decision, or only those whose annotations require logging?

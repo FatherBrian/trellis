@@ -1,4 +1,4 @@
-# Moat example policies. Validate with: moat policy check examples/policies.yaml
+# Trellis example policies. Validate with: trellis policy check examples/policies.yaml
 #
 # Effective access = human access ∩ agent ceiling ∩ task scope. Anything outside that
 # intersection is denied. Inside it, a policy must allow the action, and its conditions

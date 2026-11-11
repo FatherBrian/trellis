@@ -1,6 +1,6 @@
-# Contributing to Moat
+# Contributing to Trellis
 
-Thanks for helping. Moat is early, so issues that question the design are as welcome as
+Thanks for helping. Trellis is early, so issues that question the design are as welcome as
 pull requests.
 
 ## Set up

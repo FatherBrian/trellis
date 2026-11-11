@@ -1,8 +1,8 @@
-# Moat
+# Trellis
 
 **Delegated access control and a tamper-evident audit ledger for AI agents.**
 
-Moat gives an AI agent only the data access its current task needs, on behalf of one
+Trellis gives an AI agent only the data access its current task needs, on behalf of one
 specific person, and records a tamper-evident proof of every decision. It pairs
 delegated attribute-based access control (ABAC) with an append-only access ledger, and
 ships MCP middleware so any MCP tool can adopt it in a few lines.
@@ -61,17 +61,17 @@ policies:
 ## Quickstart
 
 ```bash
-git clone https://github.com/OWNER/moat && cd moat
+git clone https://github.com/OWNER/trellis && cd trellis
 uv sync --extra dev          # or: python -m pip install -e ".[dev]"
 uv run pytest
-uv run moat policy check examples/policies.yaml
+uv run trellis policy check examples/policies.yaml
 ```
 
 Use it as a library:
 
 ```python
 from datetime import timedelta
-from moat import Authorizer, GrantStore, Ledger, Principal, YamlCatalog, load_policies
+from trellis import Authorizer, GrantStore, Ledger, Principal, YamlCatalog, load_policies
 
 grants = GrantStore()
 authorizer = Authorizer(
@@ -89,24 +89,24 @@ decision = authorizer.authorize(principal, "read", "finance.gl.journal_entries")
 print(decision.allowed, decision.masks, decision.reason)
 # True ('approver_email', 'part_number') allowed by finance-read; masked approver_email ...
 
-with Ledger("moat-ledger.db") as ledger:
+with Ledger("trellis-ledger.db") as ledger:
     ledger.record(principal, "read", "finance.gl.journal_entries", decision)
 ```
 
 Then ask what happened:
 
 ```bash
-moat trace --agent report-bot --for alice@example.com --since 7d
-moat explain <event-id>
-moat ledger verify
+trellis trace --agent report-bot --for alice@example.com --since 7d
+trellis explain <event-id>
+trellis ledger verify
 ```
 
 Guard an MCP tool:
 
 ```python
-from moat.mcp_middleware import MoatGuard
+from trellis.mcp_middleware import TrellisGuard
 
-guard = MoatGuard(authorizer, ledger, token_provider=current_request_token)
+guard = TrellisGuard(authorizer, ledger, token_provider=current_request_token)
 
 @mcp.tool()
 @guard.tool(action="read", resource="finance.gl.journal_entries")
@@ -122,24 +122,24 @@ def journal_entries(limit: int = 100) -> list[dict]:
 | 2 | Policies as code (YAML) | Done, syntax to settle |
 | 3 | Decision API: `authorize(principal, action, resource, context)` | Library done; HTTP server to do |
 | 4 | Ledger: hash-chained, SQLite/Postgres, OpenTelemetry, Parquet | SQLite and verify done; rest to do |
-| 5 | Trace CLI: `moat trace`, `moat explain` | Basic versions work |
+| 5 | Trace CLI: `trellis trace`, `trellis explain` | Basic versions work |
 | 6 | MCP middleware for the Python MCP SDK, Unity Catalog OSS tags | Guard done; SDK wiring and UC adapter to do |
 | 7 | `docker compose up` demo | Placeholder |
 
 Non-goals for v0.1: enforcement inside query engines, a web UI, multi-tenancy, Cedar or
-OPA backends, and identity issuance (Moat consumes identities from your IdP).
+OPA backends, and identity issuance (Trellis consumes identities from your IdP).
 
 ## Layout
 
 ```
-src/moat/
+src/trellis/
   grants.py          grants, agent ceilings, tokens
   policy.py          YAML policy model and loader
   catalog.py         data tags and human clearances (YAML fallback, Unity Catalog OSS stub)
   decision.py        Authorizer.authorize(): the intersection, deny by default
   ledger.py          append-only hash-chained ledger and verify()
-  mcp_middleware.py  MoatGuard for MCP tool calls
-  cli.py             the moat command
+  mcp_middleware.py  TrellisGuard for MCP tool calls
+  cli.py             the trellis command
   server.py          HTTP decision server (stub)
 examples/            example policies and catalog
 demo/                docker compose demo (placeholder)

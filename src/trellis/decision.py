@@ -20,9 +20,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from moat.catalog import Catalog, Column, Human, Resource, Tags
-from moat.grants import AgentProfile, Grant, GrantStore, utcnow
-from moat.policy import Policy, PolicyBundle
+from trellis.catalog import Catalog, Column, Human, Resource, Tags
+from trellis.grants import AgentProfile, Grant, GrantStore, utcnow
+from trellis.policy import Policy, PolicyBundle
 
 
 class Principal(BaseModel):
@@ -93,7 +93,7 @@ def explain_missing(tag: str, human: Human, agent: AgentProfile, grant: Grant) -
 class Authorizer:
     """Evaluates requests against grants, agent ceilings, catalog tags and policies.
 
-    TODO(week 1): expose this over a small HTTP server (see ``moat.server``).
+    TODO(week 1): expose this over a small HTTP server (see ``trellis.server``).
     TODO(week 1): add explicit ``effect: deny`` policies if the format needs them.
     """
 
