@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from writ import GrantError, GrantStore
+from moat import GrantError, GrantStore
 
 from conftest import ALICE, NOW, issue
 
@@ -27,7 +27,7 @@ def test_revoke_stops_the_token(grants: GrantStore) -> None:
 
 def test_unknown_token_is_rejected(grants: GrantStore) -> None:
     with pytest.raises(GrantError, match="unknown token"):
-        grants.resolve("writ_not-a-token", now=NOW)
+        grants.resolve("moat_not-a-token", now=NOW)
 
 
 @pytest.mark.parametrize(

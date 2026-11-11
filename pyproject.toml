@@ -3,15 +3,16 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-# Working name. Check PyPI and trademark availability before the first publish.
-name = "writ"
+# Distribution name: the bare "moat" is taken on PyPI. Import name and CLI stay "moat".
+# GitHub organisation and trademark checks are still open.
+name = "moat-authz"
 version = "0.0.1"
 description = "Delegated access control and a tamper-evident audit ledger for AI agents."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "Writ contributors" }]
+authors = [{ name = "Moat contributors" }]
 keywords = ["ai-agents", "mcp", "abac", "access-control", "audit", "data-governance"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -45,14 +46,14 @@ parquet = ["pyarrow>=15"]
 mcp = ["mcp>=1.2"]
 
 [project.scripts]
-writ = "writ.cli:main"
+moat = "moat.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/writ"
-Issues = "https://github.com/OWNER/writ/issues"
+Homepage = "https://github.com/OWNER/moat"
+Issues = "https://github.com/OWNER/moat/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/writ"]
+packages = ["src/moat"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -70,7 +71,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "PT"]
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["writ"]
+known-first-party = ["moat"]
 known-local-folder = ["conftest"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -80,7 +81,7 @@ known-local-folder = ["conftest"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-packages = ["writ"]
+packages = ["moat"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]

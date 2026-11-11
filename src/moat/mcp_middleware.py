@@ -6,7 +6,7 @@ provider reads the bearer token from the current request context.
 
 Usage::
 
-    guard = WritGuard(authorizer, ledger, token_provider=current_request_token)
+    guard = MoatGuard(authorizer, ledger, token_provider=current_request_token)
 
     @mcp.tool()
     @guard.tool(action="read", resource="finance.gl.journal_entries")
@@ -28,9 +28,9 @@ import inspect
 from collections.abc import Callable
 from typing import Any, ParamSpec, TypeVar, cast
 
-from writ.decision import Authorizer, Decision, Principal, RequestContext
-from writ.grants import GrantError
-from writ.ledger import Ledger
+from moat.decision import Authorizer, Decision, Principal, RequestContext
+from moat.grants import GrantError
+from moat.ledger import Ledger
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -40,8 +40,8 @@ MASK = "***"
 ResourceSpec = str | Callable[..., str]
 
 
-class WritDenied(PermissionError):
-    """Raised instead of running the tool when Writ denies the call."""
+class MoatDenied(PermissionError):
+    """Raised instead of running the tool when Moat denies the call."""
 
     def __init__(self, decision: Decision, event_id: str | None = None) -> None:
         super().__init__(decision.reason)
@@ -60,7 +60,7 @@ def redact(result: Any, masks: tuple[str, ...]) -> Any:
     return result
 
 
-class WritGuard:
+class MoatGuard:
     def __init__(
         self,
         authorizer: Authorizer,
@@ -72,18 +72,18 @@ class WritGuard:
         self.token_provider = token_provider
 
     def check(self, action: str, resource: str, columns: tuple[str, ...] | None = None) -> Decision:
-        """Authorize and record one call. Raises ``WritDenied`` on a deny."""
+        """Authorize and record one call. Raises ``MoatDenied`` on a deny."""
         try:
             grant = self.authorizer.grants.resolve(self.token_provider())
         except GrantError as exc:
             # TODO(week 2): record rejected tokens too, under an "unknown" principal.
-            raise WritDenied(Decision(allowed=False, reason=str(exc))) from exc
+            raise MoatDenied(Decision(allowed=False, reason=str(exc))) from exc
         principal = Principal.from_grant(grant)
         ctx = RequestContext(columns=columns)
         decision = self.authorizer.authorize(principal, action, resource, ctx)
         event = self.ledger.record(principal, action, resource, decision, ctx)
         if not decision.allowed:
-            raise WritDenied(decision, event.event_id)
+            raise MoatDenied(decision, event.event_id)
         return decision
 
     def tool(

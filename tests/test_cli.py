@@ -5,8 +5,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from writ import Authorizer, GrantStore, Ledger, Principal
-from writ.cli import main
+from moat import Authorizer, GrantStore, Ledger, Principal
+from moat.cli import main
 
 from conftest import ALICE, EXAMPLES, JOURNAL
 

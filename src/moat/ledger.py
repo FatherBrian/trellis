@@ -25,8 +25,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from writ.decision import Decision, Principal, RequestContext
-from writ.grants import utcnow
+from moat.decision import Decision, Principal, RequestContext
+from moat.grants import utcnow
 
 GENESIS_HASH = "0" * 64
 

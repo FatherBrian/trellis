@@ -1,9 +1,9 @@
-"""The ``writ`` command line.
+"""The ``moat`` command line.
 
-writ trace --agent report-bot --for alice@example.com --since 7d
-writ explain <event-id>
-writ ledger verify
-writ policy check examples/policies.yaml
+moat trace --agent report-bot --for alice@example.com --since 7d
+moat explain <event-id>
+moat ledger verify
+moat policy check examples/policies.yaml
 """
 
 from __future__ import annotations
@@ -15,23 +15,23 @@ from datetime import timedelta
 
 import click
 
-from writ import __version__
-from writ.grants import utcnow
-from writ.ledger import Ledger, LedgerEvent
-from writ.policy import PolicyError, load_policies
+from moat import __version__
+from moat.grants import utcnow
+from moat.ledger import Ledger, LedgerEvent
+from moat.policy import PolicyError, load_policies
 
-DEFAULT_LEDGER = "writ-ledger.db"
+DEFAULT_LEDGER = "moat-ledger.db"
 _DURATION = re.compile(r"^(\d+)([smhdw])$")
 _UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
 ledger_option = click.option(
     "--ledger",
     "ledger_path",
-    envvar="WRIT_LEDGER",
+    envvar="MOAT_LEDGER",
     default=DEFAULT_LEDGER,
     show_default=True,
     type=click.Path(dir_okay=False),
-    help="SQLite ledger file (or set WRIT_LEDGER).",
+    help="SQLite ledger file (or set MOAT_LEDGER).",
 )
 
 
@@ -51,9 +51,9 @@ def _summary(ev: LedgerEvent) -> str:
 
 
 @click.group()
-@click.version_option(__version__, prog_name="writ")
+@click.version_option(__version__, prog_name="moat")
 def main() -> None:
-    """Writ: delegated access control and audit for AI agents."""
+    """Moat: delegated access control and audit for AI agents."""
 
 
 @main.command()
@@ -155,20 +155,20 @@ def _not_yet(feature: str) -> None:
 def grant_issue(agent: str, human: str, task: str, scope: str, ttl: str) -> None:
     """Issue a task-scoped grant and print the agent token once."""
     # TODO(week 1): needs the persistent grant store.
-    _not_yet("writ grant issue")
+    _not_yet("moat grant issue")
 
 
 @grant.command("list")
 def grant_list() -> None:
     """List grants."""
-    _not_yet("writ grant list")
+    _not_yet("moat grant list")
 
 
 @grant.command("revoke")
 @click.argument("grant_id")
 def grant_revoke(grant_id: str) -> None:
     """Revoke a grant; its token stops working immediately."""
-    _not_yet("writ grant revoke")
+    _not_yet("moat grant revoke")
 
 
 @main.command()
@@ -176,7 +176,7 @@ def grant_revoke(grant_id: str) -> None:
 @click.option("--port", default=8181, show_default=True, type=int)
 def serve(host: str, port: int) -> None:
     """Run the HTTP decision server."""
-    _not_yet("writ serve")
+    _not_yet("moat serve")
 
 
 if __name__ == "__main__":

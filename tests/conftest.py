@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from writ import Authorizer, GrantStore, IssuedGrant, Ledger, YamlCatalog, load_policies
+from moat import Authorizer, GrantStore, IssuedGrant, Ledger, YamlCatalog, load_policies
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 NOW = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)

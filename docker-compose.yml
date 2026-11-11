@@ -1,21 +1,21 @@
-# Writ demo. Placeholder: the services below are sketched for week 3 and do not run yet.
+# Moat demo. Placeholder: the services below are sketched for week 3 and do not run yet.
 #   docker compose up
 services:
-  writ:
+  moat:
     build: .
-    command: ["writ", "serve", "--host", "0.0.0.0", "--port", "8181"]
+    command: ["moat", "serve", "--host", "0.0.0.0", "--port", "8181"]
     environment:
-      WRIT_LEDGER: /data/writ-ledger.db
+      MOAT_LEDGER: /data/moat-ledger.db
     volumes:
-      - ./examples:/etc/writ:ro
-      - writ-data:/data
+      - ./examples:/etc/moat:ro
+      - moat-data:/data
     ports:
       - "8181:8181"
 
-  # TODO(week 3): MCP server exposing the sample dataset, every tool wrapped in WritGuard.
+  # TODO(week 3): MCP server exposing the sample dataset, every tool wrapped in MoatGuard.
   # mcp-server:
   #   build: ./demo
-  #   depends_on: [writ]
+  #   depends_on: [moat]
 
   # TODO(week 3): scripted agent that makes one allowed, one masked and one denied call.
   # agent:
@@ -24,4 +24,4 @@ services:
   #   depends_on: [mcp-server]
 
 volumes:
-  writ-data:
+  moat-data:

@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from writ import Authorizer, GrantStore, Ledger
-from writ.mcp_middleware import MASK, WritDenied, WritGuard
+from moat import Authorizer, GrantStore, Ledger
+from moat.mcp_middleware import MASK, MoatDenied, MoatGuard
 
 from conftest import ALICE, JOURNAL
 
@@ -18,9 +18,9 @@ ROWS = [
 
 def _guard(
     authorizer: Authorizer, ledger: Ledger, grants: GrantStore, scope: set[str]
-) -> WritGuard:
+) -> MoatGuard:
     issued = grants.issue(human=ALICE, agent="report-bot", task="variance", scope=scope)
-    return WritGuard(authorizer, ledger, token_provider=lambda: issued.token)
+    return MoatGuard(authorizer, ledger, token_provider=lambda: issued.token)
 
 
 def test_allowed_call_runs_redacts_and_records(
@@ -53,7 +53,7 @@ def test_denied_call_never_runs_but_is_recorded(
         ran = True
         return ROWS
 
-    with pytest.raises(WritDenied) as exc:
+    with pytest.raises(MoatDenied) as exc:
         journal_columns(columns=["entry_id", "part_number"])
     assert not ran
     (event,) = ledger.query()
@@ -73,17 +73,17 @@ def test_async_tools_are_guarded(
 
     rows = asyncio.run(read_table(JOURNAL))
     assert rows[1]["approver_email"] == MASK
-    with pytest.raises(WritDenied):
+    with pytest.raises(MoatDenied):
         asyncio.run(read_table("eng.parts.bom"))
     assert len(ledger) == 2
 
 
 def test_bad_token_is_denied(authorizer: Authorizer, ledger: Ledger) -> None:
-    guard = WritGuard(authorizer, ledger, token_provider=lambda: "writ_bogus")
+    guard = MoatGuard(authorizer, ledger, token_provider=lambda: "moat_bogus")
 
     @guard.tool(action="read", resource=JOURNAL)
     def journal_entries() -> list[dict[str, Any]]:
         return ROWS
 
-    with pytest.raises(WritDenied, match="unknown token"):
+    with pytest.raises(MoatDenied, match="unknown token"):
         journal_entries()
