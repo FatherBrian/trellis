@@ -12,7 +12,7 @@ Neither one says *this agent, for this person, on this task*. And when someone a
 later "who let the agent read that?", the answer is spread across an IdP log, a gateway
 log and an application log that were never meant to agree.
 
-Trellis is an open-source attempt at that missing piece. It's two things.
+Trellis is an open-source attempt at that missing piece: two ideas, and a door that enforces them.
 
 ## The grant: three keys
 
