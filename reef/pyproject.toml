@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 # Reef, the tool aggregator: Trellis enforced at the door of your MCP servers.
 name = "reef-mcp"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "A grant-shaped MCP gateway: agents see and call only what their Trellis grant allows."
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Trellis contributors" }]
 keywords = ["mcp", "ai-agents", "gateway", "access-control", "audit"]
 dependencies = [
-    "trellisd",
+    "trellisd>=0.1.0,<0.2",
     "mcp>=2.3,<3",
     "uvicorn>=0.30",
     "anyio>=4",
@@ -21,6 +21,10 @@ dependencies = [
 
 [project.scripts]
 reef = "reef.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/FatherBrian/trellis/tree/main/reef"
+Issues = "https://github.com/FatherBrian/trellis/issues"
 
 [tool.uv.sources]
 trellisd = { workspace = true }

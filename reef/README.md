@@ -4,7 +4,7 @@ Reef is the door in front of your MCP servers. An agent connects once, with its 
 grant token, and sees only the tools its grant allows. Every call it makes is decided by
 Trellis's three checks and written to the Trellis ledger before anything is forwarded.
 
-Package: `reef-mcp`. It depends on [`trellisd`](../README.md) and runs Trellis in the same
+Package: `reef-mcp`. It depends on [`trellisd`](https://github.com/FatherBrian/trellis/blob/main/README.md) and runs Trellis in the same
 process.
 
 ```
@@ -80,7 +80,7 @@ from Reef's own process, which obo mode needs: the person's sign-in is held in m
 only, so the endpoint that takes it and the door that uses it must be one process.
 
 For trying it out, `reef sample ledger|hr` runs the sample MCP servers, and
-[quickstart/](../quickstart/README.md) runs the whole thing with `docker compose up`.
+[quickstart/](https://github.com/FatherBrian/trellis/blob/main/quickstart/README.md) runs the whole thing with `docker compose up`.
 
 ## Limits in v0.1
 

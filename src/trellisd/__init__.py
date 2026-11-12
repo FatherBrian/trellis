@@ -11,7 +11,7 @@ from trellisd.engine import CheckResult, Decision, Engine
 from trellisd.grants import Grant, GrantError, GrantStore, IssuedGrant
 from trellisd.ledger import Ledger, LedgerEvent, LedgerUnavailable, VerifyResult
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
 
 __all__ = [
     "Catalog",

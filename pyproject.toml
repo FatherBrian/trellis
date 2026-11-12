@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 # Distribution, import and CLI name: trellisd. The project is called Trellis.
 # GitHub organisation and trademark checks are still open.
 name = "trellisd"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Delegated access control and a tamper-evident audit ledger for AI agents."
 readme = "README.md"
 license = "Apache-2.0"
@@ -63,8 +63,8 @@ mcp = ["mcp>=2.3,<3"]
 trellisd = "trellisd.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/trellis"
-Issues = "https://github.com/OWNER/trellis/issues"
+Homepage = "https://github.com/FatherBrian/trellis"
+Issues = "https://github.com/FatherBrian/trellis/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/trellisd"]

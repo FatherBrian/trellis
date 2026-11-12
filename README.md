@@ -4,7 +4,7 @@
 
 Trellis gives an AI agent only the data access its current task needs, on behalf of one
 specific person, and records a tamper-evident proof of every decision. It pairs
-delegated attribute-based access control (ABAC) with an append-only access ledger. **Reef** (`reef-mcp`, in [reef/](reef/README.md)),
+delegated attribute-based access control (ABAC) with an append-only access ledger. **Reef** (`reef-mcp`, in [reef/](https://github.com/FatherBrian/trellis/blob/main/reef/README.md)),
 its tool aggregator, puts it at the door of your MCP servers: an agent sees only the tools
 its grant allows, and every call is decided and recorded before it's forwarded. The
 package, import and command are all `trellisd`.
@@ -12,7 +12,7 @@ package, import and command are all `trellisd`.
 > Status: pre-alpha. v0.1's six milestones work and are tested: grants on Cedar and the
 > three checks, the ledger, contracts and Iceberg catalogs, sign-in from any OIDC IdP with
 > an AuthZEN endpoint, Reef, and a one-command quickstart.
-> See [docs/roadmap.md](docs/roadmap.md).
+> See [docs/roadmap.md](https://github.com/FatherBrian/trellis/blob/main/docs/roadmap.md).
 
 ## Quickstart
 
@@ -24,8 +24,8 @@ docker compose up --build
 Postgres, an Iceberg REST catalog, Keycloak, two MCP servers, Reef with Trellis, and a
 scripted agent. The agent signs in for Ana, sees only the tool its grant allows, reads a
 masked result, is denied a tool outside its task, and traces the deny to the check that
-said no and who allowed it. See [quickstart/](quickstart/README.md) and
-[demo/M6.md](demo/M6.md).
+said no and who allowed it. See [quickstart/](https://github.com/FatherBrian/trellis/blob/main/quickstart/README.md) and
+[demo/M6.md](https://github.com/FatherBrian/trellis/blob/main/demo/M6.md).
 
 ## Why
 
@@ -70,7 +70,7 @@ read hr.payroll                            ✓                 ✓              
 read finance.treasury.cash_positions       ✗                 ✓               ✓      DENY   no access rule lets ana@example.com read ...
 ```
 
-[demo/M1.md](demo/M1.md) walks through it.
+[demo/M1.md](https://github.com/FatherBrian/trellis/blob/main/demo/M1.md) walks through it.
 
 ## Writing policy
 
@@ -101,7 +101,7 @@ purposes:
     trigger: {type: inspection, tags: [quality], row_filter: "inspection_id = {trigger.record}"}
 ```
 
-`trellisd schema` prints the JSON Schema. See [examples/three-keys](examples/three-keys).
+`trellisd schema` prints the JSON Schema. See [examples/three-keys](https://github.com/FatherBrian/trellis/tree/main/examples/three-keys).
 
 ## As a library
 
@@ -117,7 +117,7 @@ for check in decision.checks:
     print(check.label, check.allowed, check.policies, check.reason)
 ```
 
-Put Reef in front of your MCP servers (see [reef/README.md](reef/README.md)), or guard a
+Put Reef in front of your MCP servers (see [reef/README.md](https://github.com/FatherBrian/trellis/blob/main/reef/README.md)), or guard a
 tool inside a server that can't sit behind Reef:
 
 ```python
@@ -186,8 +186,8 @@ demo/                one note per milestone demo
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/FatherBrian/trellis/blob/main/CONTRIBUTING.md).
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/FatherBrian/trellis/blob/main/LICENSE).
