@@ -33,6 +33,8 @@ dependencies = [
     "cedarpy>=4.12,<5",
     # Ed25519 signatures on grant entries and ledger checkpoints.
     "cryptography>=42",
+    # Verifying sign-in tokens from any OIDC IdP (RS256, PS256, ES256 against its JWKS).
+    "PyJWT[crypto]>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -90,7 +92,7 @@ known-first-party = ["trellisd"]
 known-local-folder = ["conftest"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "PT018"]
+"tests/**" = ["S101", "S105", "S106", "S310", "PT018"]
 "tests/fixtures/iceberg/record.py" = ["S108"]
 
 [tool.mypy]

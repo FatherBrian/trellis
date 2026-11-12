@@ -3,6 +3,7 @@ agents:
   report-bot:
     owner: ana@example.com
     description: Drafts finance reports.
+    identities: [local:report-bot]      # the client it signs in as (see identity.yaml)
     ceiling:
       actions: [read, query]
       tags: [finance, pii, hr]
@@ -10,6 +11,7 @@ agents:
   inspector-bot:
     owner: quality-lead@example.com
     description: Reviews one inspection record when it is filed.
+    identities: [local:inspector-bot]
     ceiling:
       actions: [read]
       tags: [quality]

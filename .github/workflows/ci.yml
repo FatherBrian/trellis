@@ -47,3 +47,4 @@ jobs:
           uv run trellisd demo three-keys
           uv run trellisd demo who-allowed-this
           uv run trellisd demo catalog-says-pii
+          uv run trellisd demo bring-your-own-idp

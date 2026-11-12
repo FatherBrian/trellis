@@ -63,6 +63,55 @@ class Agent(_Model):
     owner: str
     description: str = ""
     ceiling: Ceiling = Ceiling()
+    identities: tuple[str, ...] = Field(
+        default=(),
+        description="The workload identities that sign in as this agent, as IDP:CLIENT_ID"
+        " (for example local:report-bot). An actor token from any other client is refused.",
+    )
+
+
+ExchangeKind = Literal["rfc8693", "entra-obo", "none"]
+
+
+class IdentityProvider(_Model):
+    """An OIDC IdP whose tokens Trellis accepts. Trellis brokers sign-in; it isn't an IdP."""
+
+    issuer: str = Field(description="The iss claim, exactly as the IdP writes it.")
+    audience: tuple[str, ...] = Field(
+        description="Inbound tokens must be for one of these audiences (the aud claim)."
+    )
+    discovery_url: str | None = Field(
+        default=None,
+        description="Default: the issuer plus /.well-known/openid-configuration.",
+    )
+    algorithms: tuple[str, ...] = ("RS256", "PS256", "ES256")
+    subject_claim: str = Field(
+        default="email",
+        description="The claim that names a person: it must match a key under people.",
+    )
+    client_claims: tuple[str, ...] = Field(
+        default=("azp", "client_id", "appid"),
+        description="Claims that name the client, for a token with no person in it.",
+    )
+    people: bool = Field(default=True, description="May this IdP vouch for people?")
+    agents: bool = Field(default=True, description="May this IdP vouch for agents?")
+    leeway_seconds: int = 30
+    exchange: ExchangeKind = Field(
+        default="none",
+        description="How Trellis gets a downstream token for the person: rfc8693 token"
+        " exchange (Keycloak, Ping, Okta), entra-obo (Entra on-behalf-of), or none.",
+    )
+    client_id: str | None = Field(
+        default=None, description="Trellis's own client at this IdP, for exchanges."
+    )
+    client_secret_env: str | None = Field(
+        default=None, description="The environment variable holding that client's secret."
+    )
+
+    @field_validator("audience", mode="before")
+    @classmethod
+    def _one_or_many(cls, value: Any) -> Any:
+        return (value,) if isinstance(value, str) else value
 
 
 def _check_who(value: tuple[str, ...]) -> tuple[str, ...]:
@@ -241,6 +290,7 @@ class TrellisConfig(_Model):
     catalogs: dict[str, CatalogSource] = Field(default_factory=dict)
     contracts: dict[str, Contract] = Field(default_factory=dict)
     levels: tuple[str, ...] | None = None
+    idps: dict[str, IdentityProvider] = Field(default_factory=dict)
 
     @property
     def scale(self) -> tuple[str, ...]:
@@ -261,6 +311,14 @@ class TrellisConfig(_Model):
             if level in tags:
                 out |= set(self.scale[i:])
         return frozenset(out)
+
+    def agent_for(self, idp: str, client_id: str) -> str | None:
+        """The registered agent a workload identity signs in as, if any."""
+        wanted = f"{idp}:{client_id}"
+        for name, agent in self.agents.items():
+            if wanted in agent.identities:
+                return name
+        return None
 
     def contract_for(self, address: str) -> Contract | None:
         for c in self.contracts.values():
@@ -291,6 +349,7 @@ class TrellisConfig(_Model):
             catalogs=union(dict(self.catalogs), dict(other.catalogs), "catalogs"),
             contracts=union(dict(self.contracts), dict(other.contracts), "contracts"),
             levels=self.levels if self.levels is not None else other.levels,
+            idps=union(dict(self.idps), dict(other.idps), "idps"),
         )
 
     # -- lookups ---------------------------------------------------------------------------
@@ -321,7 +380,7 @@ def _load_file(path: Path) -> TrellisConfig:
         except OdcsError as exc:
             raise ConfigError(f"{path}: {exc}") from exc
         return TrellisConfig(contracts={c.contract: c for c in mapped.contracts})
-    known = {"people", "agents", "access", "purposes", "catalog", "catalogs", "levels"}
+    known = {"people", "agents", "access", "purposes", "catalog", "catalogs", "levels", "idps"}
     data = {k: v for k, v in raw.items() if k in known}
     if not data:
         return TrellisConfig()
@@ -365,6 +424,20 @@ def _check_references(config: TrellisConfig) -> None:
             claimed[address] = urn
     if len(set(config.scale)) != len(config.scale):
         raise ConfigError("levels repeat a level")
+    seen: dict[str, str] = {}
+    for name, registered in sorted(config.agents.items()):
+        for ident in registered.identities:
+            idp, _, client = ident.partition(":")
+            if not client:
+                raise ConfigError(f"agent {name}: identity {ident!r} must be IDP:CLIENT_ID")
+            if idp not in config.idps:
+                raise ConfigError(f"agent {name}: identity {ident} names unknown IdP {idp}")
+            if ident in seen:
+                raise ConfigError(f"{ident} signs in as two agents, {seen[ident]} and {name}")
+            seen[ident] = name
+    issuers = [p.issuer for p in config.idps.values()]
+    if len(set(issuers)) != len(issuers):
+        raise ConfigError("two IdPs share an issuer")
 
 
 def contract_schema() -> dict[str, Any]:

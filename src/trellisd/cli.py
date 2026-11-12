@@ -547,6 +547,27 @@ def demo_catalog_says_pii(
             fake.close()
 
 
+@demo.command("bring-your-own-idp")
+@config_option
+@click.option(
+    "--keycloak",
+    help="The demo Keycloak realm to sign in to, such as http://localhost:8183/realms/trellis"
+    " (see examples/idp/keycloak). Default: an OIDC IdP the demo starts in-process.",
+)
+def demo_bring_your_own_idp(config_paths: tuple[str, ...], keycloak: str | None) -> None:
+    """Ana signs in to her IdP; report-bot trades her token for a grant; AuthZEN decides."""
+    from trellisd.demo_idp import run_bring_your_own_idp
+
+    try:
+        cfg = load_config(*config_paths) if config_paths else load_config(example_dir("three-keys"))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if "local" not in cfg.idps:
+        raise click.ClickException("the demo needs an IdP called local (see identity.yaml)")
+    with tempfile.TemporaryDirectory() as tmp:
+        run_bring_your_own_idp(cfg, f"sqlite:///{tmp}/demo.db", keycloak)
+
+
 class _DemoClock:
     """Lets the demo move the catalog cache's clock forward without waiting."""
 
@@ -784,6 +805,35 @@ def _demo_table(t: Trellis, token: str, heads: list[str], calls: list[tuple[str,
 
 
 # -- config ----------------------------------------------------------------------------------
+
+
+@main.command()
+@config_option
+@db_option
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8180, show_default=True, type=int)
+def serve(config_paths: tuple[str, ...], db_url: str, host: str, port: int) -> None:
+    """Serve AuthZEN evaluation and sign-in token exchange over HTTP."""
+    from trellisd.server import serve as run_server
+
+    try:
+        cfg = load_config(*config_paths)
+        t = Trellis(cfg, db_url, signer=_signer())
+    except (ConfigError, DatabaseError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    base = f"http://{host}:{port}"
+    click.echo(f"Trellis on {base}")
+    click.echo(f"  POST {base}/access/v1/evaluation   AuthZEN evaluation")
+    click.echo(f"  GET  {base}/.well-known/authzen-configuration")
+    click.echo(f"  POST {base}/token                  sign-in: RFC 8693 token exchange")
+    idps = ", ".join(f"{n} ({p.issuer})" for n, p in sorted(cfg.idps.items())) or "none"
+    click.echo(f"  IdPs: {idps}")
+    try:
+        run_server(t, host, port)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        t.close()
 
 
 @main.command("compile")
@@ -1076,6 +1126,14 @@ def print_trace(t: Trace) -> None:
             f" scope {', '.join(sorted(g.scope))}, until {g.expires_at:%H:%M} UTC"
         )
         echo(f"  receipt {issued.hash[:16]}…, {sig} by key {issued.key_id}")
+        for role in ("person", "agent"):
+            v = g.signed_in.get(role)
+            if v is None:
+                continue
+            echo(
+                f"  {v.get('id')} signed in through {v.get('idp')}"
+                f" ({v.get('issuer')}, subject {v.get('subject')})"
+            )
         if t.grant.revoked is not None:
             r = t.grant.revoked
             echo(

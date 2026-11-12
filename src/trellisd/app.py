@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from trellisd.catalog import (
     Catalog,
@@ -38,6 +38,7 @@ from trellisd.grants import (
     new_token,
     utcnow,
 )
+from trellisd.identity import Identities, IdentityError, Principal
 from trellisd.ledger import Ledger, LedgerEvent, LedgerUnavailable, jsonable, snapshot_version
 from trellisd.signing import Signer
 
@@ -49,6 +50,7 @@ class Trellis:
         db: Database | str = DEFAULT_URL,
         catalog: Catalog | None = None,
         signer: Signer | None = None,
+        identities: Identities | None = None,
     ) -> None:
         """``signer`` signs grant entries and checkpoints; without one, Trellis makes a
         throwaway key (fine for tests, not for a ledger you'll keep)."""
@@ -59,6 +61,10 @@ class Trellis:
         self.ledger = Ledger(self.db, self.signer)
         self.engine = Engine(config, catalog or Resolver.from_config(config, tag_sources(config)))
         self._drift_seen: set[tuple[str, str, str]] = set()
+        self.identities = identities if identities is not None else Identities.from_config(config)
+        #: The person's own sign-in token per grant, for exchange(). Memory only: it is never
+        #: written to the database or the ledger, and is gone on restart.
+        self._held: dict[str, tuple[Principal, str]] = {}
         #: The version every decision records, so it can be replayed against this config.
         self.config_version = self.ledger.save_snapshot("config", jsonable(config))
 
@@ -100,6 +106,7 @@ class Trellis:
         ttl: timedelta = DEFAULT_TTL,
         issued_by: str | None = None,
         now: datetime | None = None,
+        signed_in: dict[str, dict[str, str]] | None = None,
     ) -> IssuedGrant:
         """A person lets an agent act for them on one task.
 
@@ -126,7 +133,188 @@ class Trellis:
             issued_by=issued_by,
             ttl=ttl,
             now=now,
+            **({"signed_in": signed_in} if signed_in else {}),
         )
+
+    def sign_in(
+        self,
+        *,
+        subject_token: str,
+        actor_token: str,
+        task: str,
+        scope: Iterable[str],
+        actions: Sequence[str] = ("read", "query"),
+        ttl: timedelta = DEFAULT_TTL,
+        now: datetime | None = None,
+    ) -> IssuedGrant:
+        """RFC 8693 with the person as subject and the agent as actor: a grant from sign-in.
+
+        The person's token must come from an IdP trusted for people and name someone in the
+        directory; the agent's must come from a client the agent registry lists. Either
+        failing refuses the grant, and the refusal is recorded. The grant records which IdP
+        vouched for each.
+        """
+        problems: list[str] = []
+        person = agent_p = None
+        try:
+            person = self.identities.verify(subject_token)
+        except IdentityError as exc:
+            problems.append(f"the person's token: {exc}")
+        try:
+            agent_p = self.identities.verify(actor_token)
+        except IdentityError as exc:
+            problems.append(f"the agent's token: {exc}")
+        agent = None
+        if person is not None:
+            problems += self._person_problems(person)
+        if agent_p is not None:
+            agent, more = self._agent_for(agent_p)
+            problems += more
+        signed_in = {
+            k: p.vouch() for k, p in (("person", person), ("agent", agent_p)) if p is not None
+        }
+        if problems or person is None or agent is None:
+            self._refuse_sign_in(problems, person, agent_p, agent, task, now)
+        issued = self.issue_grant(
+            person=person.id,
+            agent=agent,
+            task=task,
+            scope=scope,
+            actions=actions,
+            ttl=self._ttl_within(ttl, person, now),
+            now=now,
+            signed_in=signed_in,
+        )
+        self._held[issued.grant.id] = (person, subject_token)
+        return issued
+
+    def sign_in_run(
+        self,
+        *,
+        token: str,
+        purpose: str,
+        record: str,
+        ttl: timedelta = DEFAULT_TTL,
+        now: datetime | None = None,
+    ) -> IssuedGrant:
+        """A process agent signs in with its own client credentials to start a purpose run."""
+        problems: list[str] = []
+        agent = None
+        principal = None
+        try:
+            principal = self.identities.verify(token)
+            agent, problems = self._agent_for(principal)
+        except IdentityError as exc:
+            problems.append(f"the agent's token: {exc}")
+        if problems or agent is None or principal is None:
+            self._refuse_sign_in(problems, None, principal, agent, purpose, now)
+        return self.start_run(
+            purpose=purpose,
+            agent=agent,
+            record=record,
+            started_by=f"{agent} (client {principal.id} at {principal.idp})",
+            ttl=ttl,
+            now=now,
+            signed_in={"agent": principal.vouch()},
+        )
+
+    def exchange(
+        self, token: str, audience: str, scopes: Sequence[str] = (), now: datetime | None = None
+    ) -> str:
+        """A downstream token for the person behind a live grant (an obo-mode server).
+
+        The grant must still be live, and Trellis must still hold the person's sign-in. The
+        ledger records the exchange (never the token).
+        """
+        grant = self.grants.resolve(token, now)
+        held = self._held.get(grant.id)
+        if held is None:
+            raise GrantError(
+                f"Trellis doesn't hold {grant.subject}'s sign-in for grant {grant.id} (it keeps"
+                " sign-ins in memory only), so it can't act as them downstream; sign in again"
+            )
+        person, subject_token = held
+        body = {"audience": audience, "scopes": list(scopes), "idp": person.idp, "mode": "obo"}
+        try:
+            out = self.identities.exchange(person, subject_token, audience, scopes)
+        except IdentityError as exc:
+            self.ledger.append(
+                "credential.refused",
+                agent=grant.agent,
+                subject=grant.subject,
+                grant_id=grant.id,
+                body={**body, "reason": str(exc)},
+                ts=now,
+            )
+            raise
+        self.ledger.append(
+            "credential.exchanged",
+            agent=grant.agent,
+            subject=grant.subject,
+            grant_id=grant.id,
+            body={**body, "receipt": grant.receipt},
+            ts=now,
+        )
+        return out
+
+    def _person_problems(self, person: Principal) -> list[str]:
+        idp = self.config.idps.get(person.idp)
+        if person.kind != "human":
+            return [f"the person's token is for client {person.id}, not a person"]
+        if idp is not None and not idp.people:
+            return [f"IdP {person.idp} isn't trusted to vouch for people"]
+        if person.id not in self.config.people:
+            return [f"{person.id} (from {person.idp}) isn't in the directory"]
+        return []
+
+    def _agent_for(self, p: Principal) -> tuple[str | None, list[str]]:
+        idp = self.config.idps.get(p.idp)
+        if p.kind != "workload":
+            return None, [f"the agent's token is for {p.id}, a person, not an agent"]
+        if idp is not None and not idp.agents:
+            return None, [f"IdP {p.idp} isn't trusted to vouch for agents"]
+        agent = self.config.agent_for(p.idp, p.id)
+        if agent is None:
+            return None, [
+                f"the agent's token is for client {p.id} at {p.idp}, which no agent in the"
+                " registry lists"
+            ]
+        return agent, []
+
+    def _ttl_within(self, ttl: timedelta, person: Principal, now: datetime | None) -> timedelta:
+        """A grant from sign-in lives no longer than the person's own token."""
+        if person.expires_at is None:
+            return ttl
+        left = person.expires_at - (now or utcnow())
+        return min(ttl, left) if left > timedelta(0) else ttl
+
+    def _refuse_sign_in(
+        self,
+        problems: list[str],
+        person: Principal | None,
+        agent_p: Principal | None,
+        agent: str | None,
+        task: str,
+        now: datetime | None,
+    ) -> NoReturn:
+        problems = problems or ["sign-in didn't name both a person and an agent"]
+        self.ledger.append(
+            "grant.refused",
+            agent=agent or (agent_p.id if agent_p else "unknown"),
+            subject=person.id if person else "unknown",
+            body={
+                "stage": "sign-in",
+                "task": task,
+                "problems": problems,
+                "signed_in": {
+                    k: p.vouch()
+                    for k, p in (("person", person), ("agent", agent_p))
+                    if p is not None
+                },
+            },
+            ts=now,
+        )
+        raise GrantError("; ".join(problems))
 
     def start_run(
         self,
@@ -137,6 +325,7 @@ class Trellis:
         started_by: str,
         ttl: timedelta = DEFAULT_TTL,
         now: datetime | None = None,
+        signed_in: dict[str, dict[str, str]] | None = None,
     ) -> IssuedGrant:
         """A trigger starts one run of a process agent under a purpose grant."""
         p = self.config.purposes.get(purpose)
@@ -168,6 +357,7 @@ class Trellis:
             trigger_record=record,
             ttl=ttl,
             now=now,
+            **({"signed_in": signed_in} if signed_in else {}),
         )
 
     def revoke(self, grant_id: str, by: str, now: datetime | None = None) -> Grant:
@@ -267,12 +457,31 @@ class Trellis:
         resource: str,
         columns: Sequence[str] | None = None,
         now: datetime | None = None,
+        *,
+        agent: str | None = None,
     ) -> Decision:
-        grant = self.grants.by_token(token)
+        """Decide one call made with a grant token. ``agent`` is who the caller says it is;
+        a token held by any other agent is denied."""
+        grant = self.grants.by_token(token) if token else None
+        if grant is not None and agent is not None and agent != grant.agent:
+            decision = Decision(
+                allowed=False,
+                reason=f"the grant is {grant.agent}'s, and {agent} presented it",
+                action=action,
+                resource=resource,
+                columns=tuple(columns or ()),
+                grant_id=grant.id,
+                agent=agent,
+                subject=grant.subject,
+                denied_by=("grant",),
+            )
+            return self._record(decision, grant, now)
         if grant is None:
             decision = Decision(
                 allowed=False,
-                reason="the token doesn't belong to any grant",
+                reason="the call carried no grant token"
+                if not token
+                else "the token doesn't belong to any grant",
                 action=action,
                 resource=resource,
                 columns=tuple(columns or ()),

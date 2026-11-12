@@ -1,0 +1,173 @@
+{
+  "realm": "trellis",
+  "enabled": true,
+  "accessTokenLifespan": 900,
+  "users": [
+    {
+      "username": "ana",
+      "email": "ana@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Ana",
+      "lastName": "Example",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ana-demo",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "tom",
+      "email": "tom@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Tom",
+      "lastName": "Example",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "tom-demo",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "service-account-report-bot",
+      "enabled": true,
+      "serviceAccountClientId": "report-bot"
+    },
+    {
+      "username": "service-account-inspector-bot",
+      "enabled": true,
+      "serviceAccountClientId": "inspector-bot"
+    },
+    {
+      "username": "service-account-rogue-bot",
+      "enabled": true,
+      "serviceAccountClientId": "rogue-bot"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "trellis-cli",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-trellis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "trellis",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "trellis",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "trellis-demo-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "standard.token.exchange.enabled": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-ledger-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "ledger-mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "report-bot",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "report-bot-demo-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-trellis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "trellis",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "inspector-bot",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "inspector-bot-demo-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-trellis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "trellis",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "rogue-bot",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "rogue-bot-demo-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-trellis",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "trellis",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ledger-mcp",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "ledger-mcp-demo-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    }
+  ]
+}

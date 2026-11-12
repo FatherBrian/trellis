@@ -56,6 +56,9 @@ class Grant(BaseModel):
     expires_at: datetime
     revoked_at: datetime | None = None
     revoked_by: str | None = None
+    #: Who vouched for each party when the grant came from sign-in: for "person" and
+    #: "agent", the IdP, its issuer and the subject it named. Empty for grants issued directly.
+    signed_in: dict[str, dict[str, str]] = Field(default_factory=dict)
     #: Hash of the ledger entry that recorded the issue (the grant receipt).
     receipt: str | None = None
 
@@ -135,6 +138,7 @@ class GrantStore:
         task: str = "",
         trigger_type: str | None = None,
         trigger_record: str | None = None,
+        signed_in: dict[str, dict[str, str]] | None = None,
         ttl: timedelta = DEFAULT_TTL,
         now: datetime | None = None,
     ) -> Grant:
@@ -158,6 +162,7 @@ class GrantStore:
             issued_by=issued_by,
             issued_at=now,
             expires_at=now + ttl,
+            signed_in=signed_in or {},
         )
 
     def save(self, grant: Grant, token: str, cur: Cursor | None = None) -> None:

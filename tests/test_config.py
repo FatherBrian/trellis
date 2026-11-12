@@ -63,4 +63,5 @@ def test_json_schema_names_the_sections() -> None:
         "catalog",
         "catalogs",
         "levels",
+        "idps",
     }

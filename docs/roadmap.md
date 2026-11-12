@@ -9,7 +9,7 @@ design doc.
 | M1 | Grants on Cedar: the three checks, obligations, grants in the database | Three keys | Done |
 | M2 | Ledger v1: Postgres, grant receipts, signed checkpoints, OpenTelemetry, `trellisd trace` and `explain --replay` | Who allowed this? | Done |
 | M3 | Contracts and the Iceberg REST catalog; ODCS adapter; the strictest tag wins | The catalog says pii | Done |
-| M4 | Sign-in from any OIDC IdP; RFC 8693 and Entra OBO; one AuthZEN endpoint | Bring your own IdP | |
+| M4 | Sign-in from any OIDC IdP; RFC 8693 and Entra OBO; one AuthZEN endpoint | Bring your own IdP | Done |
 | M5 | Reef (`reef-mcp`): tools/list filtered by the grant, enforcement and the ledger | An agent sees only its grant's tools | |
 | M6 | `docker compose up` quickstart, CI, launch post | The whole story in one command | |
 

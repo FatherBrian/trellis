@@ -44,6 +44,7 @@ python -m pip install -e .
 trellisd demo three-keys
 trellisd demo who-allowed-this    # trace a deny to its grant, then catch a ledger edit
 trellisd demo catalog-says-pii    # a catalog tags a column pii; the next query is masked
+trellisd demo bring-your-own-idp  # sign in at any OIDC IdP, then one AuthZEN endpoint
 ```
 
 ```
@@ -127,6 +128,7 @@ trellisd ledger verify [--checkpoint checkpoint.json]
 trellisd ledger export [--console]   # OpenTelemetry spans from the outbox
 trellisd contracts list | import-odcs FILE
 trellisd catalog tags TABLE          # merged tags, each with its source
+trellisd serve [--port 8180]         # AuthZEN evaluation and sign-in token exchange
 ```
 
 `--config` (or `TRELLISD_CONFIG`) is a YAML file or directory; `--db` (or `TRELLISD_DB`)
@@ -152,11 +154,15 @@ src/trellisd/
   fake_iceberg.py    an in-process Iceberg REST catalog for demos and tests
   odcs.py            the ODCS v3 contract adapter
   enforce.py         applying masks and row filters to rows
+  identity.py        sign-in from any OIDC IdP; RFC 8693 and Entra on-behalf-of
+  server.py          trellisd serve: AuthZEN evaluation and the token endpoint
+  fake_idp.py        an in-process OIDC IdP for demos and tests
   db.py              SQLite or Postgres
   mcp_middleware.py  TrellisGuard for MCP tool calls
   cli.py             the trellisd command
 examples/three-keys  the M1 and M2 demo config
 examples/lakehouse   contracts and an Iceberg REST catalog (M3)
+examples/idp         a Keycloak demo realm (M4)
 demo/                one note per milestone demo
 ```
 
