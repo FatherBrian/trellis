@@ -64,7 +64,7 @@ def _structured(result: types.CallToolResult) -> Any:
 
 
 def run_the_door(postgres: str | None = None) -> DoorResult:
-    from trellisd.cli import _event_line, _table, print_trace
+    from trellisd.cli import event_line, print_table, print_trace
 
     echo = click.echo
 
@@ -85,7 +85,7 @@ def run_the_door(postgres: str | None = None) -> DoorResult:
     def ledger_lines(s: Stack, decision_id: str) -> None:
         for e in s.trellis.ledger.query():
             if e.event_id == decision_id or e.body.get("decision") == decision_id:
-                echo("   " + _event_line(e))
+                echo("   " + event_line(e))
 
     with _database(postgres) as (db, relay), open_stack(db) as s:
         report = AgentClient(s.url, s.report_bot.token)
@@ -119,7 +119,7 @@ def run_the_door(postgres: str | None = None) -> DoorResult:
         rows = [["TOOL", "report-bot", "people-bot"]]
         for name in all_tools:
             rows.append([name, *("sees" if name in names[a] else "-" for a in names)])
-        _table(rows, indent=3, center=False)
+        print_table(rows, indent=3, center=False)
         journal = next(t for t in tools["report-bot"] if t.name == "ledger_journal_entries")
         echo("   report-bot's description of ledger_journal_entries, narrowed to its grant:")
         for line in (journal.description or "").splitlines():

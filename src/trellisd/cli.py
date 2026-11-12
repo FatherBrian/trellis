@@ -1317,6 +1317,20 @@ def _event_line(ev: LedgerEvent) -> str:
     return f"{when}  {ev.kind:<13} {ev.agent} for {ev.subject} {ev.grant_id}  [{ev.event_id}]"
 
 
+def event_line(ev: LedgerEvent) -> str:
+    """One line for a ledger event, as `trellisd trace` prints it. Public: Reef uses it."""
+    return _event_line(ev)
+
+
+def print_table(rows: list[list[str]], indent: int = 0, center: bool = True) -> None:
+    """Print rows as an aligned table, the first row bold. Public: Reef uses it.
+
+    With ``center``, the columns between the first and the last two are centred (the tick
+    columns of the three-keys table).
+    """
+    _table(rows, indent, center)
+
+
 # -- helpers ---------------------------------------------------------------------------------
 
 

@@ -32,6 +32,9 @@ CI runs the same checks on Python 3.11, 3.12 and 3.13.
   test that would have failed before the change.
 - Keep the core dependency-light: pydantic, PyYAML and click. Integrations go behind
   optional extras.
+- **Reef depends on released trellisd.** [Reef](https://github.com/FatherBrian/reef)
+  imports the names listed in `tests/test_reef_surface.py`. Removing or renaming one breaks
+  a published reef-mcp, so do it only in a new minor version, after Reef has moved off it.
 
 ## Commit messages
 
