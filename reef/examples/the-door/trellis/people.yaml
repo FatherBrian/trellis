@@ -1,0 +1,9 @@
+# The directory. People sign in through the IdP in identity.yaml; this file says which
+# groups they're in and the attributes row filters use.
+people:
+  ana@example.com:
+    groups: [finance-analysts]
+    attributes: {region: emea}
+  ben@example.com:
+    groups: [hr-partners]
+    attributes: {region: amer}

@@ -203,7 +203,8 @@ class Resolver:
         return self._index.get(address)
 
     def tables(self) -> list[str]:
-        names = {b for c in self.contracts.values() for b in c.tables}
+        # Every address a contract binds: tables and MCP tools alike.
+        names = {b for c in self.contracts.values() for b in c.bindings}
         for s in self.sources:
             names |= set(s.addresses())
         return sorted(names)

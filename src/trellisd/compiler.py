@@ -115,7 +115,10 @@ def _build(name: str, items: list[tuple[str, PolicyMeta]]) -> PolicySetText:
 class Compiler:
     def __init__(self, config: TrellisConfig) -> None:
         self.config = config
-        self.tables = set(config.catalog) | {t for c in config.contracts.values() for t in c.tables}
+        # Tables and tool addresses alike: a contract binds both, and each is a Table entity.
+        self.tables = set(config.catalog) | {
+            b for c in config.contracts.values() for b in c.bindings
+        }
 
     # -- resources -------------------------------------------------------------------------
 
@@ -173,7 +176,7 @@ class Compiler:
     def _contract_role(
         self, contract: Contract, role: str, acc: ContractAccess
     ) -> list[tuple[str, PolicyMeta]]:
-        tables = contract.tables
+        tables = contract.bindings
         if not tables:
             return []
         rows = list(dict.fromkeys(contract.rows))

@@ -4,13 +4,14 @@
 
 Trellis gives an AI agent only the data access its current task needs, on behalf of one
 specific person, and records a tamper-evident proof of every decision. It pairs
-delegated attribute-based access control (ABAC) with an append-only access ledger, and
-ships MCP middleware so any MCP tool can adopt it in a few lines. The package, import
-and command are all `trellisd`.
+delegated attribute-based access control (ABAC) with an append-only access ledger. **Reef** (`reef-mcp`, in [reef/](reef/README.md)),
+its tool aggregator, puts it at the door of your MCP servers: an agent sees only the tools
+its grant allows, and every call is decided and recorded before it's forwarded. The
+package, import and command are all `trellisd`.
 
-> Status: pre-alpha. M1 (grants on Cedar, the three checks) and M2 (ledger v1: grant
-> receipts, signed checkpoints, trace and replay, OpenTelemetry) work and are tested;
-> contracts and Iceberg, sign-in, Reef and the quickstart follow.
+> Status: pre-alpha. M1 to M5 work and are tested: grants on Cedar and the three checks,
+> the ledger, contracts and Iceberg catalogs, sign-in from any OIDC IdP with an AuthZEN
+> endpoint, and Reef. The one-command quickstart follows.
 > See [docs/roadmap.md](docs/roadmap.md).
 
 ## Why
@@ -45,6 +46,7 @@ trellisd demo three-keys
 trellisd demo who-allowed-this    # trace a deny to its grant, then catch a ledger edit
 trellisd demo catalog-says-pii    # a catalog tags a column pii; the next query is masked
 trellisd demo bring-your-own-idp  # sign in at any OIDC IdP, then one AuthZEN endpoint
+reef demo the-door                # two agents, one Reef: each sees only its grant's tools
 ```
 
 ```
@@ -102,7 +104,8 @@ for check in decision.checks:
     print(check.label, check.allowed, check.policies, check.reason)
 ```
 
-Guard an MCP tool (Reef, the tool aggregator, builds on this in M5):
+Put Reef in front of your MCP servers (see [reef/README.md](reef/README.md)), or guard a
+tool inside a server that can't sit behind Reef:
 
 ```python
 from trellisd.mcp_middleware import TrellisGuard
@@ -160,6 +163,7 @@ src/trellisd/
   db.py              SQLite or Postgres
   mcp_middleware.py  TrellisGuard for MCP tool calls
   cli.py             the trellisd command
+reef/                Reef (reef-mcp): the grant-shaped MCP gateway, its tests and demo
 examples/three-keys  the M1 and M2 demo config
 examples/lakehouse   contracts and an Iceberg REST catalog (M3)
 examples/idp         a Keycloak demo realm (M4)

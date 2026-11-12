@@ -1170,8 +1170,49 @@ def print_trace(t: Trace) -> None:
         if d.row_filter:
             src = f" (from {', '.join(d.row_filter_from)})" if d.row_filter_from else ""
             echo(f"  rows   {d.row_filter}{src}")
+    if t.enforcement:
+        echo("")
+        echo(click.style("At the door", bold=True))
+        for e in t.enforcement:
+            echo(f"  {describe_enforcement(e)} (event {e.seq})")
     for w in t.warnings:
         echo(click.style(f"  warning: {w}", fg="red"))
+
+
+CREDENTIALS = {
+    "obo": "the person's own token",
+    "agent": "the agent's own token",
+    "brokered": "a service credential Reef holds",
+    "none": "no credential",
+}
+
+
+def describe_enforcement(e: LedgerEvent) -> str:
+    """One line for an enforcement event (Reef's record of what it did with a decision)."""
+    b = e.body
+    who = b.get("enforced_by", "an enforcement point")
+    server = b.get("server") or "no server"
+    stage = b.get("stage")
+    if stage == "blocked":
+        return f"{who} blocked it: nothing was forwarded to {server}"
+    if stage == "refused":
+        return f"{who} forwarded nothing: {b.get('reason', '')}"
+    if stage == "forward":
+        cred = CREDENTIALS.get(str(b.get("credential")), str(b.get("credential")))
+        aud = f", audience {b['audience']}" if b.get("audience") else ""
+        return f"{who} forwarded it to {server}/{b.get('tool')} with {cred}{aud}"
+    if stage == "result":
+        outcome = b.get("outcome")
+        if "rows_in" in b:
+            masked = b.get("masked") or []
+            extra = f", {', '.join(masked)} masked" if masked else ""
+            return f"{server} answered; {who} kept {b['rows_out']} of {b['rows_in']} rows{extra}"
+        if outcome == "withheld":
+            return f"{who} held the result back: it couldn't apply the obligations to it"
+        if outcome == "unreachable":
+            return f"{server} couldn't be reached: {b.get('error', '')}"
+        return f"{server} answered ({outcome})"
+    return f"{who}: {stage}"
 
 
 def _catalog_sources(info: TableInfo) -> list[str]:
@@ -1267,6 +1308,12 @@ def _event_line(ev: LedgerEvent) -> str:
         tail = "" if b.get("allowed") else f"  {b.get('reason', '')}"
         call = f"{ev.agent} {b.get('action')} {b.get('resource')}"
         return f"{when}  {verdict} {call}{tail}  [{ev.event_id}]"
+    if ev.kind == "enforcement":
+        return f"{when}  DOOR  {ev.agent}: {describe_enforcement(ev)}  [{ev.event_id}]"
+    if ev.kind == "tools.listed":
+        shown = ", ".join(b.get("shown", [])) or "nothing"
+        hidden = len(b.get("hidden", []))
+        return f"{when}  LIST  {ev.agent} sees {shown} ({hidden} hidden)  [{ev.event_id}]"
     return f"{when}  {ev.kind:<13} {ev.agent} for {ev.subject} {ev.grant_id}  [{ev.event_id}]"
 
 

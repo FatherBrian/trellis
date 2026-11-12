@@ -15,7 +15,8 @@ Usage::
 
 Every call goes through Trellis's three checks, and the ledger write happens before the
 tool runs, so a denied or crashed call is still on record. On an allow, masked columns are
-redacted from dict or list-of-dict results. Reef (M5) builds on this guard.
+redacted from dict or list-of-dict results. Use it for servers that can't sit behind Reef;
+behind Reef, the door does the same with the same three checks.
 
 Tools that run SQL can read ``decision.row_filter`` through ``guard.current`` (M3 applies
 it in the Iceberg enforcer).

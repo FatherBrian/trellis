@@ -6,7 +6,7 @@ pull requests.
 ## Set up
 
 ```bash
-uv sync --extra dev                  # or: python -m pip install -e ".[dev]"
+uv sync --extra dev --all-packages   # trellisd and reef; or: python -m pip install -e ".[dev]" -e reef
 ```
 
 ## Before you open a pull request

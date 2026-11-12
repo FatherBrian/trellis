@@ -45,6 +45,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "types-PyYAML",
+    # Reef's tests run from this checkout (reef/src is on the test path).
+    "mcp>=2.3,<3",
+    "uvicorn>=0.30",
 ]
 postgres = ["psycopg[binary]>=3.1"]
 otel = [
@@ -53,8 +56,8 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.25",
 ]
 parquet = ["pyarrow>=15"]
-# The MCP middleware and Reef (M5) target the official Python MCP SDK.
-mcp = ["mcp>=1.2"]
+# The MCP middleware targets the official Python MCP SDK. Reef is its own package, reef-mcp.
+mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
 trellisd = "trellisd.cli:main"
@@ -71,16 +74,21 @@ packages = ["src/trellisd"]
 "examples/three-keys" = "trellisd/_examples/three-keys"
 "examples/lakehouse" = "trellisd/_examples/lakehouse"
 
+# Two packages, one repo: trellisd here and reef-mcp in reef/, so CI tests Reef against the
+# engine it ships with.
+[tool.uv.workspace]
+members = ["reef"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
+testpaths = ["tests", "reef/tests"]
+pythonpath = ["src", "reef/src", "tests"]
 addopts = "-ra --strict-markers"
 markers = ["postgres: needs TRELLISD_TEST_POSTGRES (a Postgres URL)"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src", "tests", "reef/src", "reef/tests"]
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
@@ -88,20 +96,21 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "PT"]
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["trellisd"]
+known-first-party = ["trellisd", "reef"]
 known-local-folder = ["conftest"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S310", "PT018"]
+"reef/tests/**" = ["S101", "S105", "S106", "S310", "PT018"]
 "tests/fixtures/iceberg/record.py" = ["S108"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "src"
-packages = ["trellisd"]
+mypy_path = "src:reef/src"
+packages = ["trellisd", "reef"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["yaml", "yaml.*", "cedarpy", "cedarpy.*", "psycopg", "psycopg.*"]
+module = ["yaml", "yaml.*", "cedarpy", "cedarpy.*", "psycopg", "psycopg.*", "httpx2", "httpx2.*"]
 ignore_missing_imports = true

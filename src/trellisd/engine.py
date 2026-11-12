@@ -452,7 +452,7 @@ class Engine:
             for _urn, c in sorted(self.config.contracts.items()):
                 for role, acc in sorted(c.access.items()):
                     for i, who in enumerate(acc.who):
-                        if mine(who) and c.tables:
+                        if mine(who) and c.bindings:
                             ids.append(
                                 f"contract.{c.name}.{role}" + (f".{i}" if len(acc.who) > 1 else "")
                             )

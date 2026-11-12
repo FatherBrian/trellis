@@ -1,0 +1,19 @@
+# Reef: one MCP endpoint in front of two servers. Agents connect with their Trellis grant
+# token and see only the tools their grant allows. `reef demo the-door` starts both sample
+# servers and fills in their URLs.
+reef:
+  servers:
+    ledger:
+      url: http://127.0.0.1:9101/mcp
+      credential: obo              # the person's own token, exchanged for this audience
+      audience: ledger-mcp
+      tools:
+        journal_entries: {action: query}
+        post_adjustment: {action: write}
+    hr:
+      url: http://127.0.0.1:9102/mcp
+      credential: brokered         # a service credential Reef holds; agents never see it
+      credential_env: REEF_HR_TOKEN
+      tools:
+        headcount: {action: read}
+        payroll: {action: read}

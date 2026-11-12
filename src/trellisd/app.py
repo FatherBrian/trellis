@@ -65,12 +65,25 @@ class Trellis:
         #: The person's own sign-in token per grant, for exchange(). Memory only: it is never
         #: written to the database or the ledger, and is gone on restart.
         self._held: dict[str, tuple[Principal, str]] = {}
+        #: The agent's own sign-in per grant, for exchange(as_agent=True). Memory only too.
+        self._held_agent: dict[str, tuple[Principal, str]] = {}
         #: The version every decision records, so it can be replayed against this config.
         self.config_version = self.ledger.save_snapshot("config", jsonable(config))
 
     @property
     def catalog(self) -> Catalog:
         return self.engine.catalog
+
+    def reload(self, config: TrellisConfig) -> None:
+        """Take a new config (a contract or ceiling changed): the next decision uses it.
+
+        Grants, the ledger and held sign-ins stay. The new config's snapshot is saved, so
+        decisions made from here on replay against it.
+        """
+        catalog = Resolver.from_config(config, tag_sources(config))
+        self.engine = Engine(config, catalog)
+        self.config = config
+        self.config_version = self.ledger.save_snapshot("config", jsonable(config))
 
     def tags_changed(self, table: str | None = None) -> None:
         """A catalog's change hook: forget cached tags so a new restriction applies now."""
@@ -186,6 +199,8 @@ class Trellis:
             signed_in=signed_in,
         )
         self._held[issued.grant.id] = (person, subject_token)
+        if agent_p is not None:
+            self._held_agent[issued.grant.id] = (agent_p, actor_token)
         return issued
 
     def sign_in_run(
@@ -208,7 +223,7 @@ class Trellis:
             problems.append(f"the agent's token: {exc}")
         if problems or agent is None or principal is None:
             self._refuse_sign_in(problems, None, principal, agent, purpose, now)
-        return self.start_run(
+        issued = self.start_run(
             purpose=purpose,
             agent=agent,
             record=record,
@@ -217,26 +232,37 @@ class Trellis:
             now=now,
             signed_in={"agent": principal.vouch()},
         )
+        self._held_agent[issued.grant.id] = (principal, token)
+        return issued
 
     def exchange(
-        self, token: str, audience: str, scopes: Sequence[str] = (), now: datetime | None = None
+        self,
+        token: str,
+        audience: str,
+        scopes: Sequence[str] = (),
+        now: datetime | None = None,
+        *,
+        as_agent: bool = False,
     ) -> str:
-        """A downstream token for the person behind a live grant (an obo-mode server).
+        """A downstream token for a live grant: the person's (an obo-mode server), or with
+        ``as_agent`` the agent's own (an agent-mode server).
 
-        The grant must still be live, and Trellis must still hold the person's sign-in. The
-        ledger records the exchange (never the token).
+        The grant must still be live, and Trellis must still hold that sign-in. The ledger
+        records the exchange (never the token).
         """
         grant = self.grants.resolve(token, now)
-        held = self._held.get(grant.id)
+        held = (self._held_agent if as_agent else self._held).get(grant.id)
         if held is None:
+            who = grant.agent if as_agent else grant.subject
             raise GrantError(
-                f"Trellis doesn't hold {grant.subject}'s sign-in for grant {grant.id} (it keeps"
-                " sign-ins in memory only), so it can't act as them downstream; sign in again"
+                f"Trellis doesn't hold {who}'s sign-in for grant {grant.id} (it keeps sign-ins"
+                f" in memory only), so it can't act as {who} downstream; sign in again"
             )
-        person, subject_token = held
-        body = {"audience": audience, "scopes": list(scopes), "idp": person.idp, "mode": "obo"}
+        principal, subject_token = held
+        mode = "agent" if as_agent else "obo"
+        body = {"audience": audience, "scopes": list(scopes), "idp": principal.idp, "mode": mode}
         try:
-            out = self.identities.exchange(person, subject_token, audience, scopes)
+            out = self.identities.exchange(principal, subject_token, audience, scopes)
         except IdentityError as exc:
             self.ledger.append(
                 "credential.refused",
@@ -462,7 +488,21 @@ class Trellis:
     ) -> Decision:
         """Decide one call made with a grant token. ``agent`` is who the caller says it is;
         a token held by any other agent is denied."""
-        grant = self.grants.by_token(token) if token else None
+        try:
+            grant = self.grants.by_token(token) if token else None
+        except (TypeError, AttributeError, KeyError):
+            raise  # a bug in Trellis, not an unreachable database
+        except Exception as exc:
+            decision = Decision(
+                allowed=False,
+                reason=f"Trellis can't read its grants ({exc}), so it denies",
+                action=action,
+                resource=resource,
+                columns=tuple(columns or ()),
+                agent=agent,
+                denied_by=("ledger",),
+            )
+            return self._record(decision, None, now)
         if grant is not None and agent is not None and agent != grant.agent:
             decision = Decision(
                 allowed=False,

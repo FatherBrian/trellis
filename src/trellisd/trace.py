@@ -45,6 +45,8 @@ class Trace:
     warnings: list[str] = field(default_factory=list)
     #: The table's classification as the decision saw it: contract, tags and their sources.
     table: TableInfo | None = None
+    #: What enforcement points (Reef) did with the decision, in order.
+    enforcement: list[LedgerEvent] = field(default_factory=list)
 
 
 def recorded_decision(event: LedgerEvent) -> Decision:
@@ -89,7 +91,19 @@ def trace(ledger: Ledger, event_id: str) -> Trace:
             warnings.append(f"the grant entry for {event.grant_id} isn't validly signed")
     snap = ledger.snapshot(str(event.body.get("catalog_snapshot", "")))
     table = table_from_snapshot(snap) if snap else None
-    return Trace(event=event, decision=decision, grant=history, warnings=warnings, table=table)
+    enforcement = [
+        e
+        for e in ledger.query(kind="enforcement", grant_id=event.grant_id or None)
+        if e.body.get("decision") == event_id
+    ]
+    return Trace(
+        event=event,
+        decision=decision,
+        grant=history,
+        warnings=warnings,
+        table=table,
+        enforcement=enforcement,
+    )
 
 
 # -- replay ----------------------------------------------------------------------------------

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+# Reef, the tool aggregator: Trellis enforced at the door of your MCP servers.
+name = "reef-mcp"
+version = "0.1.0.dev0"
+description = "A grant-shaped MCP gateway: agents see and call only what their Trellis grant allows."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Trellis contributors" }]
+keywords = ["mcp", "ai-agents", "gateway", "access-control", "audit"]
+dependencies = [
+    "trellisd",
+    "mcp>=2.3,<3",
+    "uvicorn>=0.30",
+    "anyio>=4",
+]
+
+[project.scripts]
+reef = "reef.cli:main"
+
+[tool.uv.sources]
+trellisd = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reef"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# The demo config ships inside the wheel so `reef demo the-door` works after `pip install`.
+"examples/the-door" = "reef/_examples/the-door"

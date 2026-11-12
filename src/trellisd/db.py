@@ -35,17 +35,32 @@ class Database:
         self.url = url
         self.postgres = is_postgres(url)
         self._lock = threading.RLock()
+        self._closed = False
+        self._conn: Any = self._connect()
+
+    def _connect(self) -> Any:
         try:
             if self.postgres:
                 import psycopg
 
-                self._conn: Any = psycopg.connect(url, autocommit=False, connect_timeout=5)
-            else:
-                path = url.removeprefix("sqlite:///").removeprefix("sqlite://")
-                self._conn = sqlite3.connect(path or ":memory:", check_same_thread=False)
-                self._conn.execute("PRAGMA journal_mode=WAL")
+                return psycopg.connect(self.url, autocommit=False, connect_timeout=5)
+            path = self.url.removeprefix("sqlite:///").removeprefix("sqlite://")
+            conn = sqlite3.connect(path or ":memory:", check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            return conn
         except Exception as exc:
-            raise DatabaseError(f"cannot open database {redact_url(url)}: {exc}") from exc
+            first = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+            raise DatabaseError(f"cannot open database {redact_url(self.url)}: {first}") from exc
+
+    def _live(self) -> Any:
+        """The connection, reopened if Postgres dropped it (a restart, a network blip).
+
+        A connection closed on purpose stays closed. Until Postgres is back, this raises,
+        and every caller turns that into a deny.
+        """
+        if self.postgres and not self._closed and self._conn.closed:
+            self._conn = self._connect()
+        return self._conn
 
     # -- helpers ---------------------------------------------------------------------------
 
@@ -53,6 +68,7 @@ class Database:
         return sql.replace("?", "%s") if self.postgres else sql
 
     def close(self) -> None:
+        self._closed = True
         with contextlib.suppress(Exception):  # closing twice is harmless
             self._conn.close()
 
@@ -66,7 +82,7 @@ class Database:
     def transaction(self, lock_table: str | None = None) -> Iterator[Cursor]:
         """Run statements atomically. ``lock_table`` serializes writers on that table."""
         with self._lock:
-            cur = Cursor(self, self._conn.cursor())
+            cur = Cursor(self, self._live().cursor())
             try:
                 if self.postgres:
                     if lock_table:
@@ -83,7 +99,7 @@ class Database:
     def execute_script(self, script: str) -> None:
         with self._lock:
             if self.postgres:
-                with self._conn.cursor() as cur:
+                with self._live().cursor() as cur:
                     cur.execute(script)
                 self._conn.commit()
             else:
@@ -91,7 +107,7 @@ class Database:
 
     def query(self, sql: str, params: Sequence[Any] = ()) -> list[tuple[Any, ...]]:
         with self._lock:
-            cur = self._conn.cursor()
+            cur = self._live().cursor()
             try:
                 cur.execute(self._sql(sql), tuple(params))
                 rows = list(cur.fetchall())
