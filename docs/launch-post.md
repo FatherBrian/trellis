@@ -1,5 +1,3 @@
-<!-- Draft. Not published. Title from the v0.1 plan; links point at the repo once it's public. -->
-
 # Agents need delegated ABAC
 
 An AI agent that drafts the quarter-end report for Ana doesn't need Ana's access. It needs
@@ -81,8 +79,19 @@ behind Reef, and a read-only adapter for ODCS contracts.
 
 ## Try it
 
+The demos need only Python 3.11 or later:
+
 ```bash
-git clone <repo> && cd trellis/quickstart
+pip install reef-mcp          # pulls in trellisd
+trellisd demo three-keys      # every call needs three yeses
+trellisd demo who-allowed-this
+reef demo the-door            # two agents, one Reef: each sees only its grant's tools
+```
+
+The whole story runs in Docker:
+
+```bash
+git clone https://github.com/FatherBrian/trellis && cd trellis/quickstart
 docker compose up --build
 ```
 
@@ -93,13 +102,15 @@ its task, and trace the deny. CI runs the same thing on every change.
 ## What it isn't, yet
 
 v0.1 is one process and pre-alpha. Reef speaks streamable HTTP; result enforcement covers
-row-shaped results; Iceberg REST is the one catalog. The roadmap is in the repo, and so are
-some good first issues: quickstart troubleshooting docs, a recorded terminal session, and a
-run on Windows.
+row-shaped results; Iceberg REST is the one catalog. The roadmap is in the repo. Good places
+to start helping: quickstart troubleshooting docs, a recorded terminal session, and running
+the Docker quickstart on Windows (the pip demos already run there).
 
 Others have built pieces of this: on-behalf-of tokens, task-scoped authorization, layered
 Cedar checks, hash-chained agent audit logs. Trellis's bet is that the three keys and the
 ledger belong together, enforced at the door, so that every answer to "may it?" is also the
 answer to "who said so?".
 
-Apache-2.0. Issues and pull requests welcome.
+Apache-2.0, on GitHub at [FatherBrian/trellis](https://github.com/FatherBrian/trellis) and
+on PyPI as [trellisd](https://pypi.org/project/trellisd/) and
+[reef-mcp](https://pypi.org/project/reef-mcp/). Issues and pull requests welcome.

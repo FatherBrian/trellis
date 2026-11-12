@@ -71,20 +71,10 @@ jobs:
         with:
           name: dist
           path: dist/
-      # The first release turns two pending PyPI publishers into real ones. Each token
-      # exchange converts at most one of them, and a token only covers the projects whose
-      # publisher is already real. So on the first release this step may upload only one
-      # package; the next step's token then covers both and uploads the rest. On later
-      # releases this step uploads everything and the next one skips files already there.
-      - name: Publish to PyPI (first pass)
-        id: first
-        continue-on-error: true
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-          attestations: false
+      # Both projects trust this repo, release.yml and the pypi environment, so one token
+      # covers both. Attestations are on (the action's default): PyPI shows each file was
+      # built here. skip-existing lets a re-run finish a partial upload.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
-          attestations: false

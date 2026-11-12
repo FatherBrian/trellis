@@ -11,7 +11,7 @@ design doc.
 | M3 | Contracts and the Iceberg REST catalog; ODCS adapter; the strictest tag wins | The catalog says pii | Done |
 | M4 | Sign-in from any OIDC IdP; RFC 8693 and Entra OBO; one AuthZEN endpoint | Bring your own IdP | Done |
 | M5 | Reef (`reef-mcp`): tools/list filtered by the grant, enforcement and the ledger | The door | Done |
-| M6 | `docker compose up` quickstart, CI, launch post ([draft](launch-post.md)) | The whole story in one command | Done |
+| M6 | `docker compose up` quickstart, CI, [launch post](launch-post.md) | The whole story in one command | Done |
 
 ## Open questions
 

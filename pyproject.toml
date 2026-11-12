@@ -66,7 +66,7 @@ Homepage = "https://github.com/FatherBrian/trellis"
 Issues = "https://github.com/FatherBrian/trellis/issues"
 
 [tool.hatch.build.targets.sdist]
-# reef/ is its own sdist (reef-mcp); the rest is repo tooling and the unpublished post draft.
+# reef/ is its own sdist (reef-mcp); the rest is repo tooling and the launch post.
 exclude = [
     "/.github",
     "/reef",
