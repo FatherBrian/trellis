@@ -9,10 +9,23 @@ its tool aggregator, puts it at the door of your MCP servers: an agent sees only
 its grant allows, and every call is decided and recorded before it's forwarded. The
 package, import and command are all `trellisd`.
 
-> Status: pre-alpha. M1 to M5 work and are tested: grants on Cedar and the three checks,
-> the ledger, contracts and Iceberg catalogs, sign-in from any OIDC IdP with an AuthZEN
-> endpoint, and Reef. The one-command quickstart follows.
+> Status: pre-alpha. v0.1's six milestones work and are tested: grants on Cedar and the
+> three checks, the ledger, contracts and Iceberg catalogs, sign-in from any OIDC IdP with
+> an AuthZEN endpoint, Reef, and a one-command quickstart.
 > See [docs/roadmap.md](docs/roadmap.md).
+
+## Quickstart
+
+```bash
+cd quickstart
+docker compose up --build
+```
+
+Postgres, an Iceberg REST catalog, Keycloak, two MCP servers, Reef with Trellis, and a
+scripted agent. The agent signs in for Ana, sees only the tool its grant allows, reads a
+masked result, is denied a tool outside its task, and traces the deny to the check that
+said no and who allowed it. See [quickstart/](quickstart/README.md) and
+[demo/M6.md](demo/M6.md).
 
 ## Why
 
@@ -167,6 +180,7 @@ reef/                Reef (reef-mcp): the grant-shaped MCP gateway, its tests an
 examples/three-keys  the M1 and M2 demo config
 examples/lakehouse   contracts and an Iceberg REST catalog (M3)
 examples/idp         a Keycloak demo realm (M4)
+quickstart/          docker compose up: the whole story (M6)
 demo/                one note per milestone demo
 ```
 

@@ -1,0 +1,18 @@
+# Reef in front of the two sample MCP servers. The journal tool reads a table the catalog
+# knows, so its resource is the table: the catalog's tags (approver_email is pii) apply.
+reef:
+  servers:
+    ledger:
+      url: http://ledger-mcp:9101/mcp
+      credential: obo              # Ana's own token, exchanged at Keycloak for ledger-mcp
+      audience: ledger-mcp
+      tools:
+        journal_entries: {action: query, resource: finance.gl.journal_entries}
+        post_adjustment: {action: write}
+    hr:
+      url: http://hr-mcp:9102/mcp
+      credential: brokered         # a service credential only Reef holds
+      credential_env: REEF_HR_TOKEN
+      tools:
+        headcount: {action: read}
+        payroll: {action: read}

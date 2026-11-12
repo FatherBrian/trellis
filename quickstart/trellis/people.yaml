@@ -1,0 +1,9 @@
+# The directory. People sign in at Keycloak; this says which groups they're in and the
+# attributes row filters use.
+people:
+  ana@example.com:
+    groups: [finance-analysts]
+    attributes: {region: emea}
+  tom@example.com:
+    groups: [treasury]
+    attributes: {region: amer}

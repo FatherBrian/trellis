@@ -79,8 +79,10 @@ class HttpServer:
         self.close()
 
 
-def app(server: Server[Any]) -> Any:
-    return server.streamable_http_app(stateless_http=True, json_response=True)
+def app(server: Server[Any], host: str = "127.0.0.1") -> Any:
+    """The ASGI app. Bound to a loopback host, the SDK checks the Host header (DNS
+    rebinding protection); bound to 0.0.0.0, as in a container, it serves any host name."""
+    return server.streamable_http_app(stateless_http=True, json_response=True, host=host)
 
 
 class ReefServer(HttpServer):
@@ -92,4 +94,4 @@ class ReefServer(HttpServer):
 
 
 def serve(reef: Reef, host: str = "127.0.0.1", port: int = 8190) -> None:
-    uvicorn.run(app(mcp_server(reef)), host=host, port=port, log_level="info")
+    uvicorn.run(app(mcp_server(reef), host), host=host, port=port, log_level="info")

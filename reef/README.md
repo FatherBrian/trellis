@@ -70,11 +70,17 @@ server offers and `reef.yaml` doesn't name is hidden.
 Agents see each tool as `<server>_<tool>`, a name every MCP client accepts.
 
 ```
-reef serve --config reef.yaml --trellis trellis/ --db postgresql://...
+reef serve --config reef.yaml --trellis trellis/ --db postgresql://... \
+    --key trellis.key --trellis-port 8180
 ```
 
-Agents get their grant token from Trellis's token endpoint (`trellisd serve`, `POST
-/token`) and send it to Reef as `Authorization: Bearer <grant token>`.
+Agents get their grant token from Trellis's token endpoint (`POST /token`) and send it
+to Reef as `Authorization: Bearer <grant token>`. `--trellis-port` serves that endpoint
+from Reef's own process, which obo mode needs: the person's sign-in is held in memory
+only, so the endpoint that takes it and the door that uses it must be one process.
+
+For trying it out, `reef sample ledger|hr` runs the sample MCP servers, and
+[quickstart/](../quickstart/README.md) runs the whole thing with `docker compose up`.
 
 ## Limits in v0.1
 

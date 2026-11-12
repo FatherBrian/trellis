@@ -1,0 +1,128 @@
+# Trellis and Reef, the whole story in one command:
+#
+#   cd quickstart && docker compose up --build
+#
+# Postgres holds the ledger; an Iceberg REST catalog holds the table and its pii tag;
+# Keycloak is the IdP; two sample MCP servers sit behind Reef; Trellis runs in Reef's
+# process; and a scripted agent signs in, lists its tools, reads, gets denied, and traces
+# the deny. `up` shows only the agent; the services keep running for you to poke at
+# (Trellis on :8180, Reef on :8190/mcp) until `docker compose down -v`. Every secret
+# below is a throwaway for this laptop demo.
+
+x-image: &image
+  image: trellis-quickstart:dev
+  build: {context: .., dockerfile: Dockerfile}
+
+services:
+  postgres:
+    attach: false            # quiet in `up`; see `docker compose logs postgres`
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trellis
+      POSTGRES_PASSWORD: trellis
+      POSTGRES_DB: trellis
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trellis -d trellis"]
+      interval: 2s
+      retries: 30
+
+  iceberg:
+    attach: false            # quiet in `up`; see `docker compose logs iceberg`
+    image: apache/iceberg-rest-fixture:1.9.1
+    environment:
+      CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
+      CATALOG_URI: "jdbc:sqlite::memory:"
+      CATALOG_JDBC_USER: user
+      CATALOG_JDBC_PASSWORD: password
+      REST_PORT: "8181"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8181/v1/config || exit 1"]
+      interval: 2s
+      retries: 30
+
+  keycloak:
+    attach: false            # quiet in `up`; see `docker compose logs keycloak`
+    image: keycloak/keycloak:26.4.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://keycloak:8080     # the issuer every container sees
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: warn
+    volumes:
+      - ../examples/idp/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # The image has no curl; ask the management port with bash.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"UP"' <&3
+      interval: 3s
+      retries: 60
+
+  seed:
+    attach: false            # quiet in `up`; see `docker compose logs seed`
+    <<: *image
+    command: ["reef", "quickstart", "seed", "--catalog", "http://iceberg:8181"]
+    depends_on:
+      iceberg: {condition: service_healthy}
+
+  ledger-mcp:
+    attach: false            # quiet in `up`; see `docker compose logs ledger-mcp`
+    <<: *image
+    command: ["reef", "sample", "ledger", "--host", "0.0.0.0", "--port", "9101",
+              "--issuer", "http://keycloak:8080/realms/trellis"]
+    depends_on:
+      keycloak: {condition: service_healthy}
+
+  hr-mcp:
+    attach: false            # quiet in `up`; see `docker compose logs hr-mcp`
+    <<: *image
+    command: ["reef", "sample", "hr", "--host", "0.0.0.0", "--port", "9102"]
+    environment:
+      REEF_HR_TOKEN: hr-demo-service-credential
+
+  trellis:
+    attach: false            # quiet in `up`; see `docker compose logs trellis`
+    <<: *image
+    command: ["reef", "serve", "--config", "/etc/trellis/reef.yaml",
+              "--trellis", "/etc/trellis/trellis",
+              "--db", "postgresql://trellis:trellis@postgres:5432/trellis",
+              "--key", "/data/trellis.key",
+              "--host", "0.0.0.0", "--port", "8190", "--trellis-port", "8180"]
+    environment:
+      TRELLIS_IDP_SECRET: trellis-demo-secret
+      REEF_HR_TOKEN: hr-demo-service-credential
+    volumes:
+      - .:/etc/trellis:ro
+      - trellis-key:/data
+    ports:
+      - "8180:8180"   # Trellis: /token, /access/v1/evaluation, /healthz
+      - "8190:8190"   # Reef: /mcp
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8180/healthz')"]
+      interval: 2s
+      retries: 30
+    depends_on:
+      postgres: {condition: service_healthy}
+      keycloak: {condition: service_healthy}
+      seed: {condition: service_completed_successfully}
+      ledger-mcp: {condition: service_started}
+      hr-mcp: {condition: service_started}
+
+  agent:
+    <<: *image
+    command: ["reef", "quickstart", "agent",
+              "--keycloak", "http://keycloak:8080/realms/trellis",
+              "--trellis", "http://trellis:8180",
+              "--reef", "http://trellis:8190/mcp",
+              "--db", "postgresql://trellis:trellis@postgres:5432/trellis"]
+    depends_on:
+      trellis: {condition: service_healthy}
+
+volumes:
+  trellis-key:

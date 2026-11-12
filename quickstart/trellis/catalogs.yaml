@@ -1,0 +1,11 @@
+# The Iceberg REST catalog docker compose starts; `reef quickstart seed` creates the table
+# and tags approver_email pii there. Trellis only reads it.
+catalogs:
+  lakehouse:
+    type: iceberg-rest
+    uri: http://iceberg:8181
+    namespaces: [finance]
+    ttl_seconds: 60
+    stale_after_seconds: 900
+
+levels: [public, internal, confidential, restricted]
