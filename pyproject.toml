@@ -4,7 +4,6 @@ build-backend = "hatchling.build"
 
 [project]
 # Distribution, import and CLI name: trellisd. The project is called Trellis.
-# GitHub organisation and trademark checks are still open.
 name = "trellisd"
 version = "0.1.0"
 description = "Delegated access control and a tamper-evident audit ledger for AI agents."
@@ -65,6 +64,17 @@ trellisd = "trellisd.cli:main"
 [project.urls]
 Homepage = "https://github.com/FatherBrian/trellis"
 Issues = "https://github.com/FatherBrian/trellis/issues"
+
+[tool.hatch.build.targets.sdist]
+# reef/ is its own sdist (reef-mcp); the rest is repo tooling and the unpublished post draft.
+exclude = [
+    "/.github",
+    "/reef",
+    "/quickstart",
+    "/Dockerfile",
+    "/.dockerignore",
+    "/docs/launch-post.md",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/trellisd"]

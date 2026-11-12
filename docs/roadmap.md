@@ -15,6 +15,5 @@ design doc.
 
 ## Open questions
 
-- Trellis (package trellisd) is the chosen name; GitHub organisation and trademark checks are still open.
 - Should grants follow MCP's enterprise-managed authorization extension directly, or wrap it?
 - Python-only core, or a Go decision core once latency matters?
