@@ -1,0 +1,13 @@
+# Sign-in: the IdPs whose tokens Trellis accepts. Trellis brokers sign-in; it never holds
+# passwords or creates users. A person is named by their email claim and must be under
+# people; an agent signs in as a client listed in its identities (agents.yaml).
+#
+# This one is the Keycloak realm in examples/idp/keycloak (see demo/M4.md). Any OIDC IdP
+# works the same way; for Entra, set exchange: entra-obo, and for Okta or Ping, rfc8693.
+idps:
+  local:
+    issuer: http://localhost:8183/realms/trellis
+    audience: trellis
+    exchange: rfc8693              # how Trellis gets a downstream token for the person
+    client_id: trellis             # Trellis's own client at the IdP
+    client_secret_env: TRELLIS_IDP_SECRET

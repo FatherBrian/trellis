@@ -1,0 +1,13 @@
+# Purpose grants: standing scope for process agents, each with a named human owner.
+purposes:
+  inspection-review:
+    owner: quality-lead@example.com
+    description: Review each inspection when it is filed.
+    agents: [inspector-bot]
+    actions: [read]
+    resources: [quality]
+    tags: [quality]
+    trigger:
+      type: inspection
+      tags: [quality]
+      row_filter: "inspection_id = {trigger.record}"

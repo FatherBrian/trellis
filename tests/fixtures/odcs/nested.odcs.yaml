@@ -1,0 +1,13 @@
+apiVersion: v3.0.2
+kind: DataContract
+id: orders
+version: 1.0.0
+team: [{username: owner@example.com, role: owner}]
+schema:
+  - name: orders
+    physicalName: sales.orders
+    properties:
+      - name: customer
+        logicalType: object
+        properties:
+          - {name: email, logicalType: string, classification: restricted}

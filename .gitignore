@@ -1,3 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+*.db
+*.db-journal
+
+# Signing keys (made on first use)
+*.key
+
+# --- GitHub's Python template (from the repo's first commit) ---
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

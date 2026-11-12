@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trellis
+          POSTGRES_PASSWORD: trellis
+          POSTGRES_DB: trellis
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U trellis" --health-interval 2s --health-retries 15
+    env:
+      TRELLISD_TEST_POSTGRES: postgresql://trellis:trellis@localhost:5432/trellis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: uv sync --extra dev --extra postgres --all-packages
+      - name: Lint
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+      - name: Type-check
+        run: uv run mypy
+      - name: Test
+        run: uv run pytest
+      - name: Demos
+        run: |
+          uv run trellisd demo three-keys
+          uv run trellisd demo who-allowed-this
+          uv run trellisd demo catalog-says-pii
+          uv run trellisd demo bring-your-own-idp
+          uv run reef demo the-door
+          uv run reef demo the-door --postgres "$TRELLISD_TEST_POSTGRES"
+
+  # M6: the quickstart from scratch, as a newcomer runs it. The agent exits non-zero if any
+  # part of the story doesn't hold (its grant's tools only, the mask, the deny, the trace,
+  # and ledger verify).
+  quickstart:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: quickstart
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        run: docker compose up --build --detach --wait trellis
+      - name: Run the scripted agent
+        run: docker compose run --rm --no-deps agent
+      - name: Run it again (a second grant on the same ledger)
+        run: docker compose run --rm --no-deps agent
+      - name: Service logs
+        if: failure()
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes

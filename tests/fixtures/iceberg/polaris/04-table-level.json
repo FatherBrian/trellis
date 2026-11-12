@@ -1,0 +1,125 @@
+{
+ "body": {
+  "metadata": {
+   "current-schema-id": 1,
+   "current-snapshot-id": -1,
+   "default-sort-order-id": 0,
+   "default-spec-id": 0,
+   "format-version": 2,
+   "last-column-id": 5,
+   "last-partition-id": 999,
+   "last-sequence-number": 0,
+   "last-updated-ms": 1794436265224,
+   "location": "file:///tmp/polaris/lakehouse/finance/gl/journal_entries",
+   "metadata-log": [
+    {
+     "metadata-file": "file:/tmp/polaris/lakehouse/finance/gl/journal_entries/metadata/00000-829009e3-4558-4fd1-8e62-609bcb932643.metadata.json",
+     "timestamp-ms": 1794436264689
+    },
+    {
+     "metadata-file": "file:/tmp/polaris/lakehouse/finance/gl/journal_entries/metadata/00001-efbea474-b790-4bc9-9dad-1d2b6437b490.metadata.json",
+     "timestamp-ms": 1794436265100
+    },
+    {
+     "metadata-file": "file:/tmp/polaris/lakehouse/finance/gl/journal_entries/metadata/00002-cd5f04e6-6902-42c4-a2c6-028a5d17a7df.metadata.json",
+     "timestamp-ms": 1794436265176
+    }
+   ],
+   "partition-specs": [
+    {
+     "fields": [],
+     "spec-id": 0
+    }
+   ],
+   "partition-statistics": [],
+   "properties": {
+    "created-at": "2026-11-11T22:31:04.670006997Z",
+    "trellis.column.approver_email.tags": "pii",
+    "trellis.tags": "finance,confidential",
+    "write.parquet.compression-codec": "zstd"
+   },
+   "refs": {},
+   "schemas": [
+    {
+     "fields": [
+      {
+       "id": 1,
+       "name": "entry_id",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 2,
+       "name": "amount",
+       "required": false,
+       "type": "decimal(18, 2)"
+      },
+      {
+       "id": 3,
+       "name": "region",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 4,
+       "name": "approver_email",
+       "required": false,
+       "type": "string"
+      }
+     ],
+     "schema-id": 0,
+     "type": "struct"
+    },
+    {
+     "fields": [
+      {
+       "id": 1,
+       "name": "entry_id",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 2,
+       "name": "amount",
+       "required": false,
+       "type": "decimal(18, 2)"
+      },
+      {
+       "id": 3,
+       "name": "region",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 4,
+       "name": "approver_email",
+       "required": false,
+       "type": "string"
+      },
+      {
+       "id": 5,
+       "name": "notes",
+       "required": false,
+       "type": "string"
+      }
+     ],
+     "schema-id": 1,
+     "type": "struct"
+    }
+   ],
+   "snapshot-log": [],
+   "snapshots": [],
+   "sort-orders": [
+    {
+     "fields": [],
+     "order-id": 0
+    }
+   ],
+   "statistics": [],
+   "table-uuid": "fc68f6c7-196c-479e-a8c3-ca1853196002"
+  },
+  "metadata-location": "file:/tmp/polaris/lakehouse/finance/gl/journal_entries/metadata/00003-59136064-16bb-46d9-8666-4e940a46a036.metadata.json"
+ },
+ "path": "/v1/lakehouse/namespaces/finance%1Fgl/tables/journal_entries",
+ "status": 200
+}

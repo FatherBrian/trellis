@@ -1,0 +1,22 @@
+# What people may read. Contracts add to this in M3.
+access:
+  - id: finance-gl
+    description: Finance analysts read the general ledger for their own region, PII masked.
+    who: [group:finance-analysts]
+    resources: [finance.gl]
+    tags: [finance]
+    mask: [pii]
+    row_filter: "region = {person.region}"
+  - id: treasury
+    who: [group:treasury]
+    resources: [finance.treasury]
+    tags: [finance]
+  - id: ana-hr
+    description: Ana covers HR reporting this quarter.
+    who: [user:ana@example.com]
+    resources: [hr]
+    tags: [hr]
+  - id: quality
+    who: [group:quality]
+    resources: [quality]
+    tags: [quality]

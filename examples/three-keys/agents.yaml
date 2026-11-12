@@ -1,0 +1,17 @@
+# Each agent's owner sets its ceiling: the most it may ever touch, whoever it works for.
+agents:
+  report-bot:
+    owner: ana@example.com
+    description: Drafts finance reports.
+    identities: [local:report-bot]      # the client it signs in as (see identity.yaml)
+    ceiling:
+      actions: [read, query]
+      tags: [finance, pii, hr]
+      never: [export_controlled]
+  inspector-bot:
+    owner: quality-lead@example.com
+    description: Reviews one inspection record when it is filed.
+    identities: [local:inspector-bot]
+    ceiling:
+      actions: [read]
+      tags: [quality]

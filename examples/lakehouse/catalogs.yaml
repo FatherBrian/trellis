@@ -1,0 +1,12 @@
+# Catalogs Trellis reads tags from. Read-only: Trellis never writes to them.
+# `trellisd demo catalog-says-pii` points this at a local catalog it starts itself.
+catalogs:
+  lakehouse:
+    type: iceberg-rest
+    uri: http://localhost:8181
+    namespaces: [finance]
+    ttl_seconds: 300            # a pushed change evicts sooner (Trellis.tags_changed)
+    stale_after_seconds: 900    # past this with the catalog down, every call is denied
+
+# The ranked scale, lowest first. A resource keeps the highest level any source gives it.
+levels: [public, internal, confidential, restricted]

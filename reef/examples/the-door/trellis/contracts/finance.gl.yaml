@@ -1,0 +1,26 @@
+# The general ledger's contract. It binds the ledger server's tools, so the contract, not
+# the server, says what each tool is and who may use it.
+contract: urn:contract:finance.gl
+version: 3
+kind: mcp_tool
+description: Posted journal entries, and the tool that posts adjustments.
+bindings:
+  - mcp://ledger/journal_entries
+  - mcp://ledger/post_adjustment
+owner: finance-owner@example.com
+tags: [finance, internal]
+elements:
+  entry_id: []
+  amount: []
+  region: []
+  approver_email: [pii]
+access:
+  analysts:
+    who: [group:finance-analysts]
+    actions: [read, query]
+    mask: [pii]
+  controllers:
+    who: [group:finance-controllers]
+    actions: [read, query, write]
+rows:
+  - "region = {person.region}"

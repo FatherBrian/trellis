@@ -1,0 +1,37 @@
+# An ODCS v3 contract, read through Trellis's ODCS adapter (no rewrite needed).
+apiVersion: v3.0.2
+kind: DataContract
+id: treasury-cash-positions
+name: Cash positions
+version: 1.2.0
+status: active
+domain: treasury
+team:
+  - username: treasury-owner@example.com
+    role: owner
+servers:
+  - server: lakehouse
+    type: iceberg
+    schema: finance.treasury
+tags: [finance]
+schema:
+  - name: cash_positions
+    physicalName: cash_positions
+    logicalType: object
+    classification: confidential
+    properties:
+      - name: account
+        logicalType: string
+        tags: [pii]
+      - name: balance
+        logicalType: number
+roles:
+  - role: treasury
+    access: read
+customProperties:
+  - property: trellis.mask
+    value: [pii]
+quality:
+  - type: library
+    rule: rowCount
+    mustBeGreaterThan: 0

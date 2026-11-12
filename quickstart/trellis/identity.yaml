@@ -1,0 +1,8 @@
+# Keycloak, started by docker compose with the demo realm in examples/idp/keycloak.
+idps:
+  local:
+    issuer: http://keycloak:8080/realms/trellis
+    audience: trellis
+    exchange: rfc8693
+    client_id: trellis
+    client_secret_env: TRELLIS_IDP_SECRET

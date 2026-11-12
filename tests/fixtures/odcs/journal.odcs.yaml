@@ -1,0 +1,41 @@
+# The ODCS twin of examples/lakehouse/contracts/finance.gl.yaml: it must decide the same.
+apiVersion: v3.0.2
+kind: DataContract
+id: urn:contract:finance.gl
+name: General ledger
+version: "3"
+status: active
+team:
+  - username: finance-owner@example.com
+    role: Owner
+  - username: finance-steward@example.com
+    role: Data Steward
+servers:
+  - server: lakehouse
+    type: iceberg
+    schema: finance.gl
+tags: [finance]
+schema:
+  - name: journal_entries
+    physicalName: journal_entries
+    logicalType: object
+    classification: internal
+    properties:
+      - {name: entry_id, logicalType: string}
+      - {name: amount, logicalType: number}
+      - {name: region, logicalType: string}
+      - {name: approver_email, logicalType: string}
+roles:
+  - role: finance-analysts
+    access: read
+customProperties:
+  - property: trellis.mask
+    value: [pii]
+  - property: trellis.rows
+    value: ["region = {person.region}"]
+  - property: trellis.purposes
+    value: [financial_close]
+slaProperties:
+  - property: latency
+    value: 4
+    unit: h

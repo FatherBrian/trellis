@@ -1,0 +1,9 @@
+# Each agent's owner sets its ceiling: the most it may ever touch, whoever it works for.
+agents:
+  report-bot:
+    owner: dana@example.com
+    description: Drafts finance reports.
+    identities: [local:report-bot]
+    ceiling:
+      actions: [read, query]
+      tags: [finance, hr, pii, confidential]

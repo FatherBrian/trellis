@@ -1,0 +1,9 @@
+# The IdP whose tokens Trellis accepts. `reef demo the-door` starts a local one in process
+# and points this at it; any OIDC IdP works the same way (see examples/three-keys).
+idps:
+  local:
+    issuer: http://localhost:8183/realms/trellis
+    audience: trellis
+    exchange: rfc8693              # how Trellis gets a server a token that names the person
+    client_id: trellis
+    client_secret_env: TRELLIS_IDP_SECRET

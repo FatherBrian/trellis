@@ -1,0 +1,17 @@
+# Each agent's owner sets its ceiling: the most it may ever touch, whoever it works for.
+agents:
+  report-bot:
+    owner: dana@example.com
+    description: Drafts finance reports.
+    identities: [local:report-bot]
+    ceiling:
+      actions: [read, query]
+      # confidential covers the levels under it (public, internal) too.
+      tags: [finance, hr, pii, confidential]
+  people-bot:
+    owner: hr-lead@example.com
+    description: Answers HR questions.
+    identities: [local:people-bot]
+    ceiling:
+      actions: [read, query]
+      tags: [hr, pii, confidential]

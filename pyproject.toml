@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+# Distribution, import and CLI name: trellisd. The project is called Trellis.
+# GitHub organisation and trademark checks are still open.
+name = "trellisd"
+version = "0.1.0.dev0"
+description = "Delegated access control and a tamper-evident audit ledger for AI agents."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Trellis contributors" }]
+keywords = ["ai-agents", "mcp", "abac", "access-control", "audit", "data-governance"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "click>=8.1",
+    # Cedar is the policy evaluator (Python bindings to the Rust cedar-policy crate).
+    "cedarpy>=4.12,<5",
+    # Ed25519 signatures on grant entries and ledger checkpoints.
+    "cryptography>=42",
+    # Verifying sign-in tokens from any OIDC IdP (RS256, PS256, ES256 against its JWKS).
+    "PyJWT[crypto]>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "opentelemetry-sdk>=1.25",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-PyYAML",
+    # Reef's tests run from this checkout (reef/src is on the test path).
+    "mcp>=2.3,<3",
+    "uvicorn>=0.30",
+]
+postgres = ["psycopg[binary]>=3.1"]
+otel = [
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-http>=1.25",
+]
+parquet = ["pyarrow>=15"]
+# The MCP middleware targets the official Python MCP SDK. Reef is its own package, reef-mcp.
+mcp = ["mcp>=2.3,<3"]
+
+[project.scripts]
+trellisd = "trellisd.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/trellis"
+Issues = "https://github.com/OWNER/trellis/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trellisd"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# The demo configs ship inside the wheel so `trellisd demo` works after `pip install`.
+"examples/three-keys" = "trellisd/_examples/three-keys"
+"examples/lakehouse" = "trellisd/_examples/lakehouse"
+
+# Two packages, one repo: trellisd here and reef-mcp in reef/, so CI tests Reef against the
+# engine it ships with.
+[tool.uv.workspace]
+members = ["reef"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "reef/tests"]
+pythonpath = ["src", "reef/src", "tests"]
+addopts = "-ra --strict-markers"
+markers = ["postgres: needs TRELLISD_TEST_POSTGRES (a Postgres URL)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "reef/src", "reef/tests"]
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "PT"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["trellisd", "reef"]
+known-local-folder = ["conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S310", "PT018"]
+"reef/tests/**" = ["S101", "S105", "S106", "S310", "PT018"]
+"tests/fixtures/iceberg/record.py" = ["S108"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src:reef/src"
+packages = ["trellisd", "reef"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["yaml", "yaml.*", "cedarpy", "cedarpy.*", "psycopg", "psycopg.*", "httpx2", "httpx2.*"]
+ignore_missing_imports = true
