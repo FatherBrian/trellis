@@ -110,7 +110,8 @@ def open_stack(
     base = examples()
     with ExitStack() as stack:
         idp = stack.enter_context(FakeIdP(users=IDP_USERS, clients=IDP_CLIENTS))
-        cfg = config or load_config(base / "trellis")
+        rc = reef_config or load_reef_config(base / "reef.yaml")
+        cfg = rc.apply_to(config or load_config(base / "trellis"))
         local = cfg.idps["local"].model_copy(update={"issuer": idp.issuer})
         cfg = cfg.model_copy(update={"idps": {"local": local}})
         identities = Identities.from_config(
@@ -121,7 +122,6 @@ def open_stack(
         hr_secret = "hr-svc-" + secrets.token_urlsafe(12)
         ledger = stack.enter_context(ledger_server(jwt_verifier(idp, "ledger-mcp")))
         hr = stack.enter_context(hr_server(secret_verifier(hr_secret, "reef (hr service account)")))
-        rc = reef_config or load_reef_config(base / "reef.yaml")
         urls = {"ledger": ledger.url, "hr": hr.url}
         rc = rc.model_copy(
             update={

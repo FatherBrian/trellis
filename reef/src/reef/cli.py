@@ -16,7 +16,13 @@ def main() -> None:
 
 
 @main.command()
-@click.option("--config", "reef_config", required=True, help="reef.yaml: the servers behind Reef.")
+@click.option(
+    "--config",
+    "reef_config",
+    default="reef.yaml",
+    show_default=True,
+    help="The servers behind Reef.",
+)
 @click.option(
     "--trellis",
     "trellis_config",
@@ -60,7 +66,8 @@ def serve(
 
     rc = load_reef_config(reef_config)
     signer = Signer.load_or_create(key_path) if key_path else None
-    with Trellis(load_config(*trellis_config), db, signer=signer) as trellis:
+    config = rc.apply_to(load_config(*trellis_config))
+    with Trellis(config, db, signer=signer) as trellis:
         reef = Reef(trellis, rc)
         side = None
         if trellis_port is not None:
@@ -74,6 +81,76 @@ def serve(
         finally:
             if side is not None:
                 side.close()
+
+
+@main.command()
+@click.option(
+    "--config",
+    "reef_config",
+    default="reef.yaml",
+    show_default=True,
+    help="The servers behind Reef (and their contracts).",
+)
+@click.option(
+    "--trellis",
+    "trellis_config",
+    multiple=True,
+    required=True,
+    help="Trellis config files or dirs.",
+)
+@click.option("--db", default=DEFAULT_URL, show_default=True, help="Trellis's database URL.")
+@click.option(
+    "--key", "key_path", default=None, help="Ed25519 key for the ledger (made if missing)."
+)
+@click.option("--person", required=True, help="Who the agent acts for (and who allows it).")
+@click.option("--agent", required=True)
+@click.option("--task", required=True, help="What the agent is doing, in words.")
+@click.option("--scope", required=True, help="Comma-separated tags the task covers.")
+@click.option("--actions", default="read,query", show_default=True)
+@click.option("--ttl", default="1h", show_default=True, help="30m, 8h, 1d (24h at most).")
+@click.option("--json", "as_json", is_flag=True)
+def grant(
+    reef_config: str,
+    trellis_config: tuple[str, ...],
+    db: str,
+    key_path: str | None,
+    person: str,
+    agent: str,
+    task: str,
+    scope: str,
+    actions: str,
+    ttl: str,
+    as_json: bool,
+) -> None:
+    """A person lets an agent act for them on one task, through Reef.
+
+    Like `trellisd grant issue`, but it also reads reef.yaml, so the servers' own contracts
+    count. Give the token to the agent as its bearer token for Reef.
+    """
+    from reef.config import ReefConfigError, load_reef_config
+    from trellisd.cli import parse_duration, print_issued
+    from trellisd.config import ConfigError
+    from trellisd.grants import GrantError
+    from trellisd.signing import Signer
+
+    try:
+        config = load_reef_config(reef_config).apply_to(load_config(*trellis_config))
+    except (ConfigError, ReefConfigError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    signer = Signer.load_or_create(key_path) if key_path else None
+    with Trellis(config, db, signer=signer) as trellis:
+        try:
+            issued = trellis.issue_grant(
+                person=person,
+                agent=agent,
+                task=task,
+                scope=[t.strip() for t in scope.split(",") if t.strip()],
+                actions=tuple(a.strip() for a in actions.split(",") if a.strip()),
+                ttl=parse_duration(ttl),
+            )
+        except GrantError as exc:
+            raise click.ClickException(f"grant refused: {exc}") from exc
+    print_issued(issued.grant, issued.token, as_json)
 
 
 @main.command()

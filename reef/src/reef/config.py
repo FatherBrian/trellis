@@ -21,6 +21,30 @@ A tool's resource is ``mcp://<server>/<tool>`` unless it names another. The cont
 binds that address classifies it, so a tool no contract binds is denied and never listed.
 Tools the server offers and this file doesn't name are hidden: Reef forwards nothing it
 can't map to a resource.
+
+A server can carry its own contract, so its tools need no contract files: give it an
+``owner`` and its ``tags``, ``access`` and ``elements`` apply to every tool it lists. A tool
+adds to them where it differs. Its tags join the server's, and its elements and access
+roles replace the server's of the same name:
+
+        hr:
+          url: http://127.0.0.1:9102/mcp
+          credential: brokered
+          credential_env: REEF_HR_TOKEN
+          owner: hr-lead@example.com
+          tags: [hr]
+          access:
+            partners: {who: [group:hr-partners], actions: [read]}
+          tools:
+            headcount: {action: read, tags: [internal]}
+            payroll:
+              action: read
+              tags: [confidential]
+              elements: {salary: [pii]}
+
+Each tool then gets a contract of its own, ``urn:contract:<server>.<tool>``, exactly as if
+it had been written as a file, so decisions and ``trellisd trace`` name it the same way. A
+server without an owner carries none, and its tools need contract files as before.
 """
 
 from __future__ import annotations
@@ -31,7 +55,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from trellisd.config import ACTIONS
+from trellisd.config import ACTIONS, Contract, ContractAccess, Tags, TrellisConfig
 
 CredentialMode = Literal["obo", "brokered", "agent", "none"]
 
@@ -51,6 +75,17 @@ class ToolSpec(_Model):
     resource: str | None = Field(
         default=None, description="The address Trellis classifies. Default mcp://<server>/<tool>."
     )
+    tags: Tags = Field(default=frozenset(), description="Added to the server's tags.")
+    elements: dict[str, Tags] = Field(
+        default_factory=dict, description="Result fields and their tags, over the server's."
+    )
+    access: dict[str, ContractAccess] = Field(
+        default_factory=dict, description="Access roles, replacing the server's of the same name."
+    )
+
+    @property
+    def classifies(self) -> bool:
+        return bool(self.tags or self.elements or self.access)
 
     @model_validator(mode="after")
     def _known_action(self) -> ToolSpec:
@@ -76,6 +111,14 @@ class ServerSpec(_Model):
         description="A credential Reef uses to read the server's tool catalog, if it wants one.",
     )
     tools: dict[str, ToolSpec] = Field(default_factory=dict)
+    # The server's own contract (optional): see the module docstring.
+    owner: str | None = Field(
+        default=None, description="Who owns this server's tools. Setting it makes the contract."
+    )
+    version: str = "1"
+    tags: Tags = frozenset()
+    elements: dict[str, Tags] = Field(default_factory=dict)
+    access: dict[str, ContractAccess] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _mode_needs(self) -> ServerSpec:
@@ -84,6 +127,36 @@ class ServerSpec(_Model):
         if self.credential == "brokered" and not self.credential_env:
             raise ValueError("credential brokered needs credential_env")
         return self
+
+    @model_validator(mode="after")
+    def _contract_needs_owner(self) -> ServerSpec:
+        # Fail closed and loud: tags or access with no owner would otherwise be ignored.
+        if self.owner is None:
+            if self.tags or self.elements or self.access:
+                raise ValueError("tags, elements and access need an owner for the server")
+            named = sorted(t for t, spec in self.tools.items() if spec.classifies)
+            if named:
+                raise ValueError(
+                    f"tools {', '.join(named)} set tags, elements or access, which need an"
+                    " owner for the server"
+                )
+        return self
+
+    def contract(self, server: str, tool: str, resource: str) -> Contract | None:
+        """The contract this server gives one of its tools, or None without an owner."""
+        if self.owner is None:
+            return None
+        spec = self.tools.get(tool) or ToolSpec()
+        return Contract(
+            contract=f"urn:contract:{server}.{tool}",
+            version=self.version,
+            kind="mcp_tool",
+            bindings=(resource,),
+            owner=self.owner,
+            tags=self.tags | spec.tags,
+            elements={**self.elements, **spec.elements},
+            access={**self.access, **spec.access},
+        )
 
 
 class ReefConfig(_Model):
@@ -97,6 +170,38 @@ class ReefConfig(_Model):
     def resource(self, server: str, tool: str) -> str:
         spec = self.servers[server].tools.get(tool)
         return (spec.resource if spec and spec.resource else None) or f"mcp://{server}/{tool}"
+
+    def contracts(self) -> dict[str, Contract]:
+        """Every contract a server in this file gives its tools, by URN."""
+        out: dict[str, Contract] = {}
+        for server, spec in self.servers.items():
+            for tool in spec.tools:
+                c = spec.contract(server, tool, self.resource(server, tool))
+                if c is not None:
+                    out[c.contract] = c
+        return out
+
+    def apply_to(self, config: TrellisConfig) -> TrellisConfig:
+        """Trellis's config with this file's server contracts added.
+
+        An address keeps one contract: a server contract for a tool that a contract file
+        already binds is an error, not a silent override.
+        """
+        mine = self.contracts()
+        for urn, c in sorted(mine.items()):
+            for address in c.bindings:
+                other = config.contract_for(address)
+                if other is not None:
+                    raise ReefConfigError(
+                        f"{address} has a contract file ({other.contract}) and a server"
+                        f" contract in reef.yaml ({urn}); keep one"
+                    )
+        if not mine:
+            return config
+        try:
+            return config.merged(TrellisConfig(contracts=mine))
+        except ValueError as exc:
+            raise ReefConfigError(str(exc)) from exc
 
     @model_validator(mode="after")
     def _unique_names(self) -> ReefConfig:

@@ -11,12 +11,20 @@ import pytest
 
 REEF_USES = {
     "trellisd.app": ["Trellis"],
-    "trellisd.cli": ["event_line", "print_table", "print_trace"],
-    "trellisd.config": ["ACTIONS", "TrellisConfig", "load_config"],
+    "trellisd.cli": ["event_line", "parse_duration", "print_issued", "print_table", "print_trace"],
+    "trellisd.config": [
+        "ACTIONS",
+        "CatalogSource",
+        "Contract",
+        "ContractAccess",
+        "TrellisConfig",
+        "load_config",
+    ],
     "trellisd.db": ["DEFAULT_URL", "Database"],
     "trellisd.demo_idp": ["DEMO_SECRETS", "http"],
     "trellisd.enforce": ["RowFilterError", "compile_filter"],
     "trellisd.engine": ["MASK", "Decision"],
+    "trellisd.fake_iceberg": ["FakeIcebergCatalog"],
     "trellisd.fake_idp": ["FakeIdP"],
     "trellisd.grants": ["Grant", "GrantError", "IssuedGrant"],
     "trellisd.iceberg": ["IcebergRestAdmin", "IcebergRestTagSource"],

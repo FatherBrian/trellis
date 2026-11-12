@@ -14,6 +14,22 @@ reef:
       url: http://127.0.0.1:9102/mcp
       credential: brokered         # a service credential Reef holds; agents never see it
       credential_env: REEF_HR_TOKEN
+      # The server's own contract: every tool below gets the owner, tags and access, and
+      # adds what's different. No contract files needed for hr.
+      owner: hr-lead@example.com
+      tags: [hr]
+      access:
+        partners: {who: [group:hr-partners], actions: [read]}
       tools:
-        headcount: {action: read}
-        payroll: {action: read}
+        headcount:                 # headcount by region: internal
+          action: read
+          tags: [internal]
+          elements: {region: [], headcount: []}
+          access:
+            reporting: {who: [user:ana@example.com], actions: [read]}
+        payroll:                   # confidential, and salary is pii: Ana reads it masked
+          action: read
+          tags: [confidential]
+          elements: {employee: [], region: [], salary: [pii]}
+          access:
+            reporting: {who: [user:ana@example.com], actions: [read], mask: [pii]}

@@ -1,0 +1,5 @@
+# The agent, and the most it may ever touch, set by its owner.
+agents:
+  my-bot:
+    owner: me@example.com
+    ceiling: {tags: [hr]}

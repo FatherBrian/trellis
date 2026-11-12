@@ -117,7 +117,7 @@ for check in decision.checks:
     print(check.label, check.allowed, check.policies, check.reason)
 ```
 
-Put Reef in front of your MCP servers (see [reef/README.md](https://github.com/FatherBrian/trellis/blob/main/reef/README.md)), or guard a
+Put Reef in front of your MCP servers ([your own server in three commands](https://github.com/FatherBrian/trellis/blob/main/reef/README.md#your-own-server)), or guard a
 tool inside a server that can't sit behind Reef:
 
 ```python

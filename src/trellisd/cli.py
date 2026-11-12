@@ -274,6 +274,11 @@ def _print_issued(g: Grant, token: str, as_json: bool) -> None:
     click.echo(f"  token    {token}   (shown once; give it to the agent)")
 
 
+def print_issued(g: Grant, token: str, as_json: bool = False) -> None:
+    """Print a new grant and its token, as `trellisd grant issue` does. Public: Reef uses it."""
+    _print_issued(g, token, as_json)
+
+
 # -- decisions -------------------------------------------------------------------------------
 
 

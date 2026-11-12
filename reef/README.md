@@ -12,6 +12,70 @@ pip install reef-mcp
 reef demo the-door
 ```
 
+## Your own server
+
+Two small files and three commands put one of your MCP servers behind Reef. Here,
+`reef sample hr` stands in for your server; the files are in
+[examples/your-own-server](https://github.com/FatherBrian/trellis/tree/main/reef/examples/your-own-server).
+
+**1. Describe the server and the agent.** `reef.yaml` names the server and gives it a
+contract: who owns it, what it is, and who may use it. Every tool inherits that, and adds
+only what's different.
+
+```yaml
+reef:
+  servers:
+    hr:
+      url: http://127.0.0.1:9102/mcp   # your server
+      credential: brokered             # a service credential Reef holds; agents never see it
+      credential_env: REEF_HR_TOKEN
+      owner: me@example.com            # who to ask when a call is denied
+      tags: [hr]                       # what every tool on this server is
+      access:
+        me: {who: [user:me@example.com], actions: [read]}
+      tools:
+        headcount: {action: read}
+        payroll:
+          action: read
+          elements: {salary: [pii]}    # masked unless a grant covers pii
+```
+
+`trellis.yaml` names the agent and the most it may ever touch:
+
+```yaml
+agents:
+  my-bot:
+    owner: me@example.com
+    ceiling: {tags: [hr]}
+```
+
+**2. Give the agent a task.** You let `my-bot` act for you on one task, for an hour:
+
+```bash
+reef grant --trellis trellis.yaml --person me@example.com --agent my-bot \
+    --task "Headcount check" --scope hr
+```
+
+It prints a token, shown once.
+
+**3. Start Reef, and connect the agent.**
+
+```bash
+export REEF_HR_TOKEN=local-hr-secret
+reef sample hr --port 9102 &   # stands in for your server
+reef serve --trellis trellis.yaml
+```
+
+Point the agent's MCP client at `http://127.0.0.1:8190/mcp` with the header
+`Authorization: Bearer <the token>`. It sees `hr_headcount` and `hr_payroll`. On
+`hr_payroll`, `salary` comes back as `***`: it's pii, and the grant covers only hr.
+`trellisd trace --db sqlite:///trellisd.db` shows every list and call.
+
+From here, add servers to `reef.yaml`, and add people and groups when more than you use
+it. A tool that's different from its server gets its own tags, elements or access in
+`reef.yaml`, or a contract file of its own. The CI runs this guide in
+`tests/test_your_own_server.py`.
+
 ## What it does
 
 | | A persona-based gateway | Reef |
@@ -66,6 +130,13 @@ Each tool's address is `mcp://<server>/<tool>` unless it names another `resource
 Trellis contract binds that address, so the contract says what the tool is, who may use it
 and what gets masked. A tool no contract binds is denied and never listed; a tool the
 server offers and `reef.yaml` doesn't name is hidden.
+
+The contract can live in `reef.yaml`, as in [Your own server](#your-own-server). A server
+with an `owner` gives each of its tools a contract, `urn:contract:<server>.<tool>`, made
+from the server's `tags`, `elements` and `access` plus the tool's own. The tool's tags join
+the server's, and its elements and access roles replace the server's of the same name. Or
+write the contract as a file in the Trellis config. An address has one contract, so having
+both is an error.
 
 Agents see each tool as `<server>_<tool>`, a name every MCP client accepts.
 

@@ -1,0 +1,17 @@
+# Your own server behind Reef: one server, its own contract, no contract files.
+# Swap in your server's URL and tools; `reef sample hr` stands in for it here.
+reef:
+  servers:
+    hr:
+      url: http://127.0.0.1:9102/mcp
+      credential: brokered             # a service credential Reef holds; agents never see it
+      credential_env: REEF_HR_TOKEN
+      owner: me@example.com            # who to ask when a call is denied
+      tags: [hr]                       # what every tool on this server is
+      access:
+        me: {who: [user:me@example.com], actions: [read]}
+      tools:
+        headcount: {action: read}
+        payroll:
+          action: read
+          elements: {salary: [pii]}    # masked unless a grant covers pii
