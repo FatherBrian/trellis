@@ -195,28 +195,57 @@ def _load_lock(reef_config: str, lock_path: str | None) -> Lock | None:
     show_default=True,
     help="The servers behind Reef.",
 )
-@click.option("--lock", "lock_path", default=None, help="Default: reef.lock next to the config.")
+@click.option(
+    "--from",
+    "from_client",
+    default=None,
+    metavar="CLIENT|PATH",
+    help="Lock the servers an MCP client is set up with instead: claude-desktop, claude-code,"
+    " vscode, cursor, or the path to its JSON config.",
+)
+@click.option(
+    "--lock",
+    "lock_path",
+    default=None,
+    help="Default: reef.lock next to reef.yaml, or in the current directory with --from.",
+)
 @click.option("--check", is_flag=True, help="Exit 1 if any tool differs from the lock (CI).")
 @click.option("--update", is_flag=True, help="Rewrite the lock after reviewing the diff.")
-def lock_command(reef_config: str, lock_path: str | None, check: bool, update: bool) -> None:
+def lock_command(
+    reef_config: str, from_client: str | None, lock_path: str | None, check: bool, update: bool
+) -> None:
     """Pin each tool's description, schemas and annotations in reef.lock.
 
     The first run writes the lock. After that, it shows what changed on the servers, and
     --update rewrites it once you've reviewed the diff. With a lock, `reef serve` hides
     and refuses any tool that no longer matches.
+
+    With --from, it locks every tool of the servers in an MCP client's config (Claude
+    Desktop, Claude Code, VS Code, Cursor), so `reef lock --check --from ...` works in CI
+    for any MCP setup. That starts the config's stdio servers, as the client would.
     """
     import asyncio
     import os
 
+    from reef.clients import ClientConfigError, load_client_config
     from reef.config import ReefConfigError, load_reef_config
     from reef.lock import fetch_catalog
 
     if check and update:
         raise click.UsageError("--check and --update don't go together")
     try:
-        rc = load_reef_config(reef_config)
-        catalog = asyncio.run(fetch_catalog(rc, os.environ))
-    except (ReefConfigError, LockError) as exc:
+        if from_client:
+            loaded = load_client_config(from_client)
+            rc = loaded.config
+            click.echo(f"Servers from {loaded.path}: {', '.join(rc.servers) or 'none'}")
+            for name, why in loaded.skipped.items():
+                click.echo(click.style(f"Skipped {name}: it {why}", fg="yellow"))
+            if not rc.servers:
+                raise click.ClickException("no server in that config can be locked")
+        else:
+            rc = load_reef_config(reef_config)
+        catalog = asyncio.run(fetch_catalog(rc, os.environ, every_tool=bool(from_client)))
+    except (ReefConfigError, LockError, ClientConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     for server, spec in rc.servers.items():
@@ -224,7 +253,7 @@ def lock_command(reef_config: str, lock_path: str | None, check: bool, update: b
         for tool in sorted(set(spec.tools) - offered):
             click.echo(f"Note: reef.yaml maps {server}/{tool}, but {server} doesn't offer it")
 
-    path = _lock_file(reef_config, lock_path)
+    path = Path(lock_path or "reef.lock") if from_client else _lock_file(reef_config, lock_path)
     fresh = Lock.from_catalog(catalog)
     count = sum(len(tools) for tools in fresh.servers.values())
     if not path.exists():

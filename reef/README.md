@@ -112,6 +112,43 @@ hr/payroll changed since it was locked
 Error: 1 change(s) since reef.lock was written. Review them, then run `reef lock --update`.
 ```
 
+### Lock any MCP setup, gateway or not
+
+`reef lock --from` reads the servers straight out of an MCP client's own config and locks
+every tool they offer. You don't have to run Reef as a gateway to use it.
+
+```bash
+reef lock --from claude-code              # .mcp.json in this directory
+reef lock --from vscode                   # .vscode/mcp.json
+reef lock --from cursor                   # .cursor/mcp.json
+reef lock --from claude-desktop           # Claude Desktop's claude_desktop_config.json
+reef lock --from path/to/any-config.json  # or any file in one of those formats
+```
+
+It writes `reef.lock` in the current directory (or `--lock PATH`). Run it with `--check`
+in CI, or on a schedule, to catch a server that changed what it tells your agent:
+
+```yaml
+# .github/workflows/mcp-lock.yml
+on: [pull_request, schedule]   # schedule: e.g. - cron: "0 6 * * *"
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install reef-mcp
+      - run: reef lock --from claude-code --check
+```
+
+Both stdio servers (`command`, `args`, `env`) and HTTP servers (`url`, `headers`) work.
+`${VAR}` and `${env:VAR}` are filled from the environment, so secrets stay in CI secrets
+rather than the config. A server Reef can't reach is reported and left out: one using the
+old SSE transport, one marked `disabled`, or one that needs an interactive `${input:...}`
+value. **Locking starts the config's stdio servers**, just as the client would, so only run
+it on configs you trust.
+
 ## What it does
 
 | | A persona-based gateway | Reef |
@@ -173,6 +210,20 @@ from the server's `tags`, `elements` and `access` plus the tool's own. The tool'
 the server's, and its elements and access roles replace the server's of the same name. Or
 write the contract as a file in the Trellis config. An address has one contract, so having
 both is an error.
+
+A server can also be a local program Reef runs over stdio, instead of a URL:
+
+```yaml
+    notes:
+      command: npx
+      args: ["-y", "@example/notes-mcp"]
+      env: {NOTES_TOKEN: "${NOTES_TOKEN}"}   # its secrets, filled from Reef's environment
+      tools:
+        search: {action: read}
+```
+
+A stdio server takes its secrets in `env`, so it has no `credential` mode. An HTTP server can
+send fixed `headers` as well as its credential.
 
 Agents see each tool as `<server>_<tool>`, a name every MCP client accepts.
 

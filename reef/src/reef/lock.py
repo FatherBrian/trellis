@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from mcp import types
 
-from reef.downstream import Downstream, HttpDownstream
+from reef.downstream import Downstream, ExpansionError, downstream_for
 
 if TYPE_CHECKING:
     from reef.config import ReefConfig
@@ -163,21 +163,26 @@ async def fetch_catalog(
     config: ReefConfig,
     environ: Mapping[str, str],
     make: Callable[[str, str], Downstream] | None = None,
+    *,
+    every_tool: bool = False,
 ) -> dict[str, list[types.Tool]]:
-    """The tools each server offers now, limited to the ones reef.yaml maps.
+    """The tools each server offers now: the ones reef.yaml maps, or with ``every_tool``,
+    all of them (for a client config, where nothing is mapped).
 
     Lists with the same credential ``reef serve`` would. A server that can't be reached
     is an error: a partial lock would silently drop its tools.
     """
-    make = make or (lambda _name, url: HttpDownstream(url))
     catalog: dict[str, list[types.Tool]] = {}
     for server, spec in config.servers.items():
         env = spec.credential_env if spec.credential == "brokered" else spec.list_credential_env
         try:
-            tools = await make(server, spec.url).list_tools(environ.get(env) if env else None)
+            client = make(server, spec.where) if make else downstream_for(spec, environ)
+            tools = await client.list_tools(environ.get(env) if env else None)
+        except ExpansionError as exc:
+            raise LockError(f"{server}: {exc}") from exc
         except Exception as exc:
-            raise LockError(f"couldn't list {server}'s tools at {spec.url}: {exc}") from exc
-        catalog[server] = [t for t in tools if t.name in spec.tools]
+            raise LockError(f"couldn't list {server}'s tools ({spec.where}): {exc}") from exc
+        catalog[server] = tools if every_tool else [t for t in tools if t.name in spec.tools]
     return catalog
 
 

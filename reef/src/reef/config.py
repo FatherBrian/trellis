@@ -95,11 +95,24 @@ class ToolSpec(_Model):
 
 
 class ServerSpec(_Model):
-    url: str
-    credential: CredentialMode = Field(
-        description="obo: the person's own token, exchanged for audience. brokered: a service"
-        " credential Reef holds (credential_env). agent: the agent's own token, exchanged for"
-        " audience. none: no credential (local test servers only)."
+    # Where the server is: a streamable HTTP url, or a local command Reef runs over stdio.
+    # Values may use ${VAR} for environment variables, as MCP client configs do.
+    url: str | None = None
+    headers: dict[str, str] = Field(
+        default_factory=dict, description="http: headers sent with every request."
+    )
+    command: str | None = Field(default=None, description="stdio: the program to run.")
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = Field(
+        default_factory=dict, description="stdio: environment for the process (its secrets)."
+    )
+    cwd: str | None = None
+    credential: CredentialMode | None = Field(
+        default=None,
+        description="http servers: obo, the person's own token, exchanged for audience;"
+        " brokered, a service credential Reef holds (credential_env); agent, the agent's own"
+        " token, exchanged for audience; none, no credential (local test servers only)."
+        " stdio servers take none: their secrets come from env.",
     )
     audience: str | None = None
     scopes: tuple[str, ...] = ()
@@ -119,6 +132,29 @@ class ServerSpec(_Model):
     tags: Tags = frozenset()
     elements: dict[str, Tags] = Field(default_factory=dict)
     access: dict[str, ContractAccess] = Field(default_factory=dict)
+
+    @property
+    def where(self) -> str:
+        """The server's url, or its command line, for messages."""
+        return self.url or " ".join([self.command or "", *self.args]).strip()
+
+    @model_validator(mode="after")
+    def _transport(self) -> ServerSpec:
+        if bool(self.url) == bool(self.command):
+            raise ValueError("a server needs a url (http) or a command (stdio), not both")
+        if self.command:
+            if self.credential not in (None, "none"):
+                raise ValueError(
+                    f"credential {self.credential} sends a bearer token, which a stdio server"
+                    " can't take; give it its secrets in env instead"
+                )
+            if self.headers:
+                raise ValueError("headers are for http servers; a stdio server takes env")
+        elif self.credential is None:
+            raise ValueError("an http server needs a credential: obo, agent, brokered or none")
+        if self.url and (self.args or self.env or self.cwd):
+            raise ValueError("args, env and cwd are for stdio servers (a command)")
+        return self
 
     @model_validator(mode="after")
     def _mode_needs(self) -> ServerSpec:

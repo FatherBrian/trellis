@@ -39,7 +39,7 @@ from mcp import types
 from mcp.shared.exceptions import MCPError
 
 from reef.config import ReefConfig
-from reef.downstream import Downstream, HttpDownstream
+from reef.downstream import Downstream, downstream_for
 from reef.lock import Lock
 from trellisd.app import Trellis
 from trellisd.enforce import RowFilterError, compile_filter
@@ -71,17 +71,19 @@ class Reef:
         clock: Callable[[], float] = time.monotonic,
         lock: Lock | None = None,
     ) -> None:
-        """``downstream(server_name, url)`` makes the client for one server (tests pass
-        fakes); ``environ`` holds the brokered credentials; with ``lock``, only tools that
-        match it are shown or called."""
+        """``downstream(server_name, url_or_command)`` makes the client for one server
+        (tests pass fakes); ``environ`` holds the brokered credentials and fills ${VAR} in
+        server settings; with ``lock``, only tools that match it are shown or called."""
         self.trellis = trellis
         self.config = config
         self.lock = lock
         self.environ = environ if environ is not None else os.environ
         self.clock = clock
-        make = downstream or (lambda _name, url: HttpDownstream(url))
+        make = downstream or (
+            lambda name, _where: downstream_for(config.servers[name], self.environ)
+        )
         self.servers: dict[str, Downstream] = {
-            name: make(name, spec.url) for name, spec in config.servers.items()
+            name: make(name, spec.where) for name, spec in config.servers.items()
         }
         self.routes: dict[str, Route] = {
             config.tool_name(server, tool): Route(
