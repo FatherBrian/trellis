@@ -49,13 +49,30 @@ not a measured rate from real traffic.
    `mask`, not from the task. (That also corrects Reef's guide, which said the grant masked
    `salary`; it was the ceiling.)
 
-## What this changes for 0.2
+## After the fix: sensitive tags must be named
 
-- **Sensitivity tags must be covered, not just one domain tag.** Split tags into *domains*
-  (finance, hr, support) and *sensitivities* (pii, confidential and the levels). The task
-  check passes a resource when the scope covers at least one of its domains **and every
-  sensitivity it carries**, and the same rule applies per field. Under that rule, the headcount
-  template denies `performance_reviews` and masks `salary` unless the template includes `pii`.
+Trellis now treats some tags as **sensitive** (`pii` by default; set `sensitive:` in the config
+to add `phi`, `pci` or others, or `[]` to turn it off). The task check passes a resource only
+when the scope covers one of its other tags **and** every sensitive tag it carries, and the same
+rule applies to each field. A scope made only of sensitive tags is refused when the grant is
+issued, because a task has to name a domain. Re-running the experiment:
+
+| Task | Template | Legit calls allowed | Out-of-task calls denied | Tools reachable |
+|---|---|---|---|---|
+| Q3 close | tuned: `finance, market-data`, read and write | 4 of 4 | 3 of 3 | 5 of 13 |
+| Headcount review | `hr`, read | 3 of 3 (`salary` masked) | **3 of 3** | 3 of 13 |
+| Customer escalation | naive: `support`, read | 1 of 4 (and the needed email masked) | 3 of 3 | 2 of 13 |
+| Customer escalation | tuned: `support, customer, pii`, read and write | 4 of 4 | 3 of 3 | 4 of 13 |
+
+`performance_reviews` is now denied ("is pii, and the grant covers hr without pii"), and
+payroll's `salary` is masked ("the grant's scope doesn't include pii") unless the template names
+pii. `tests/test_sensitive_scope.py` covers these cases, plus a property test: across random
+tags, fields and scopes, no grant reaches a sensitive tag, on a tool or a field, that its scope
+doesn't name.
+
+## Still to do for 0.2
+
+- ~~Sensitive tags must be covered, not just one domain tag.~~ Done (above).
 - **Templates can name tools as well as tags.** A template with a `tools:` list (the task's
   toolbox) is the most precise option for agents whose tools are known, and it's what the
   agent config's toolbox already does at the ceiling level.

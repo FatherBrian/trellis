@@ -266,7 +266,14 @@ class Compiler:
             purpose = self.config.purposes.get(grant.subject)
             row_filter = purpose.trigger.row_filter if purpose else None
         pid = f"grant.{grant.id}"
-        conds = [f"resource.declared.containsAny({_set(grant.scope)})"]
+        # The scope must cover one of the resource's other tags, and every sensitive tag it
+        # carries: a scope of [hr] reaches an hr tool, but not one that's also pii. Columns
+        # carry their table's tags too, so the same rule masks pii fields of an hr tool.
+        sensitive = self.config.sensitive_tags
+        conds = [f"resource.declared.containsAny({_set(grant.scope - sensitive)})"]
+        missing = sensitive - grant.scope
+        if missing:
+            conds.append(f"!resource.declared.containsAny({_set(missing)})")
         text = (
             _annotations(pid, row_filter=row_filter)
             + "\n"

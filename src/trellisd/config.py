@@ -34,6 +34,8 @@ ACTIONS = ("read", "query", "export", "write")
 #: The default ranked scale. A resource carries at most one level: the highest any
 #: source gives it.
 DEFAULT_LEVELS = ("public", "internal", "confidential", "restricted")
+#: Tags a task scope must name to reach what carries them (see TrellisConfig.sensitive).
+DEFAULT_SENSITIVE = ("pii",)
 
 
 class ConfigError(ValueError):
@@ -290,11 +292,21 @@ class TrellisConfig(_Model):
     catalogs: dict[str, CatalogSource] = Field(default_factory=dict)
     contracts: dict[str, Contract] = Field(default_factory=dict)
     levels: tuple[str, ...] | None = None
+    sensitive: tuple[str, ...] | None = Field(
+        default=None,
+        description="Tags a task scope must name explicitly to reach what carries them, on a"
+        " resource or a field. A scope of [hr] reaches an hr tool, but not one also tagged pii,"
+        " and masks its pii fields. Default: [pii].",
+    )
     idps: dict[str, IdentityProvider] = Field(default_factory=dict)
 
     @property
     def scale(self) -> tuple[str, ...]:
         return self.levels if self.levels is not None else DEFAULT_LEVELS
+
+    @property
+    def sensitive_tags(self) -> Tags:
+        return frozenset(self.sensitive if self.sensitive is not None else DEFAULT_SENSITIVE)
 
     def at_or_below(self, tags: Tags) -> Tags:
         """A ceiling that allows a level allows every level under it."""
@@ -340,6 +352,12 @@ class TrellisConfig(_Model):
             raise ConfigError(f"access rule ids defined twice: {', '.join(sorted(dupes))}")
         if self.levels is not None and other.levels is not None and self.levels != other.levels:
             raise ConfigError("levels defined twice, differently")
+        if (
+            self.sensitive is not None
+            and other.sensitive is not None
+            and set(self.sensitive) != set(other.sensitive)
+        ):
+            raise ConfigError("sensitive defined twice, differently")
         return TrellisConfig(
             people=union(dict(self.people), dict(other.people), "people"),
             agents=union(dict(self.agents), dict(other.agents), "agents"),
@@ -349,6 +367,7 @@ class TrellisConfig(_Model):
             catalogs=union(dict(self.catalogs), dict(other.catalogs), "catalogs"),
             contracts=union(dict(self.contracts), dict(other.contracts), "contracts"),
             levels=self.levels if self.levels is not None else other.levels,
+            sensitive=self.sensitive if self.sensitive is not None else other.sensitive,
             idps=union(dict(self.idps), dict(other.idps), "idps"),
         )
 
@@ -380,7 +399,17 @@ def _load_file(path: Path) -> TrellisConfig:
         except OdcsError as exc:
             raise ConfigError(f"{path}: {exc}") from exc
         return TrellisConfig(contracts={c.contract: c for c in mapped.contracts})
-    known = {"people", "agents", "access", "purposes", "catalog", "catalogs", "levels", "idps"}
+    known = {
+        "people",
+        "agents",
+        "access",
+        "purposes",
+        "catalog",
+        "catalogs",
+        "levels",
+        "sensitive",
+        "idps",
+    }
     data = {k: v for k, v in raw.items() if k in known}
     if not data:
         return TrellisConfig()

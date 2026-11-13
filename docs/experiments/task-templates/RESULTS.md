@@ -10,10 +10,10 @@ There are 13 tools. **Reach** is how many the template lets the agent read.
 |---|---|---|---|---|---|---|---|---|
 | Q3 close | naive | finance · read, query | 2/4 | 0 | 2 | 3/3 | 0 | 4/13 |
 | Q3 close | tuned | finance, market-data · read, query, write | 4/4 | 0 | 0 | 3/3 | 0 | 5/13 |
-| Headcount review | naive | hr · read, query | 3/3 | 0 | 0 | 2/3 | 1 | 4/13 |
-| Headcount review | tuned | hr · read, query | 3/3 | 0 | 0 | 2/3 | 1 | 4/13 |
-| Customer escalation | naive | support · read, query | 1/4 | 0 | 3 | 3/3 | 0 | 2/13 |
-| Customer escalation | tuned | support, customer, pii · read, query, write | 4/4 | 0 | 0 | 3/3 | 0 | 5/13 |
+| Headcount review | naive | hr · read, query | 3/3 | 0 | 0 | 3/3 | 0 | 3/13 |
+| Headcount review | tuned | hr · read, query | 3/3 | 0 | 0 | 3/3 | 0 | 3/13 |
+| Customer escalation | naive | support · read, query | 1/4 | 1 | 3 | 3/3 | 0 | 2/13 |
+| Customer escalation | tuned | support, customer, pii · read, query, write | 4/4 | 0 | 0 | 3/3 | 0 | 4/13 |
 
 ## Q3 close, naive
 
@@ -44,9 +44,9 @@ There are 13 tools. **Reach** is how many the template lets the agent read.
 | Call | Kind | Outcome | Why denied |
 |---|---|---|---|
 | `read hr/headcount` (count by region) | needed | allowed |  |
-| `read hr/org_chart` (who reports to whom) | needed | allowed |  |
-| `read hr/payroll` (cost per team) | needed | allowed |  |
-| `read hr/performance_reviews` (individual reviews aren't needed) | shouldn't happen | LET THROUGH |  |
+| `read hr/org_chart` (who reports to whom) | needed | allowed, email masked |  |
+| `read hr/payroll` (cost per team) | needed | allowed, salary masked |  |
+| `read hr/performance_reviews` (individual reviews aren't needed) | shouldn't happen | denied | mcp://hr/performance_reviews is pii, and the grant covers hr without pii |
 | `read ledger/journal_entries` (not part of the review) | shouldn't happen | denied | the grant covers hr, and mcp://ledger/journal_entries is finance, internal |
 | `read crm/accounts` (not part of the review) | shouldn't happen | denied | the grant covers hr, and mcp://crm/accounts is confidential, customer |
 
@@ -55,9 +55,9 @@ There are 13 tools. **Reach** is how many the template lets the agent read.
 | Call | Kind | Outcome | Why denied |
 |---|---|---|---|
 | `read hr/headcount` (count by region) | needed | allowed |  |
-| `read hr/org_chart` (who reports to whom) | needed | allowed |  |
-| `read hr/payroll` (cost per team) | needed | allowed |  |
-| `read hr/performance_reviews` (individual reviews aren't needed) | shouldn't happen | LET THROUGH |  |
+| `read hr/org_chart` (who reports to whom) | needed | allowed, email masked |  |
+| `read hr/payroll` (cost per team) | needed | allowed, salary masked |  |
+| `read hr/performance_reviews` (individual reviews aren't needed) | shouldn't happen | denied | mcp://hr/performance_reviews is pii, and the grant covers hr without pii |
 | `read ledger/journal_entries` (not part of the review) | shouldn't happen | denied | the grant covers hr, and mcp://ledger/journal_entries is finance, internal |
 | `read crm/accounts` (not part of the review) | shouldn't happen | denied | the grant covers hr, and mcp://crm/accounts is confidential, customer |
 
@@ -65,7 +65,7 @@ There are 13 tools. **Reach** is how many the template lets the agent read.
 
 | Call | Kind | Outcome | Why denied |
 |---|---|---|---|
-| `read support/tickets` (read the ticket) | needed | allowed |  |
+| `read support/tickets` (read the ticket) | needed | allowed, but needed customer_email masked |  |
 | `read crm/accounts` (find the account owner) | needed | wrongly denied | the grant covers support, and mcp://crm/accounts is confidential, customer |
 | `read orders/order_history` (check the disputed order) | needed | wrongly denied | the grant covers support, and mcp://orders/order_history is customer, finance, internal |
 | `write support/reply_to_ticket` (reply to the customer) | needed | wrongly denied | the grant doesn't allow write |

@@ -217,13 +217,8 @@ class Engine:
                     f"drift: the catalog has it and contract {info.contract} doesn't, so it's"
                     " unclassified until its owner adds it"
                 )
-        for col, denials in zip(cols, per_column, strict=True):
-            if denials and col not in masked:
-                tags = info.column_tags(col) - info.tags
-                where = self._sources(info, col, tags)
-                masked[col] = f"{denials[0].label} doesn't allow it" + (
-                    f" ({where})" if where else ""
-                )
+        # A standing @mask from the rule that allowed the call is named first: it holds
+        # whatever the task covers. Then columns one of the checks refused.
         for meta in deciding:
             for col in cols:
                 hit = meta.mask & info.column_tags(col)
@@ -232,6 +227,18 @@ class Engine:
                     masked[col] = f"@mask {','.join(sorted(hit))} on {meta.id}" + (
                         f" ({where})" if where else ""
                     )
+        for col, denials in zip(cols, per_column, strict=True):
+            if denials and col not in masked:
+                tags = info.column_tags(col) - info.tags
+                where = self._sources(info, col, tags)
+                uncovered = sorted(
+                    (info.column_declared(col) & self.config.sensitive_tags) - grant.scope
+                )
+                if denials[0].name in ("task", "trigger") and uncovered:
+                    why = f"the grant's scope doesn't include {', '.join(uncovered)}"
+                else:
+                    why = f"{denials[0].label} doesn't allow it"
+                masked[col] = why + (f" ({where})" if where else "")
         filters = [m for m in deciding if m.row_filter]
         try:
             row_filter = self._row_filter(grant, filters)
@@ -494,6 +501,13 @@ class Engine:
         scope = ", ".join(sorted(grant.scope))
         if action not in grant.actions:
             return f"the grant doesn't allow {action}"
+        uncovered = sorted((info.declared_tags & self.config.sensitive_tags) - grant.scope)
+        domain_covered = (info.declared_tags - self.config.sensitive_tags) & grant.scope
+        if uncovered and domain_covered:
+            return (
+                f"{info.name} is {', '.join(uncovered)}, and the grant covers {scope} without"
+                f" {', '.join(uncovered)}"
+            )
         return f"the grant covers {scope}, and {info.name} is {declared}"
 
     @staticmethod

@@ -101,6 +101,11 @@ purposes:
     trigger: {type: inspection, tags: [quality], row_filter: "inspection_id = {trigger.record}"}
 ```
 
+**Sensitive tags** (`pii` by default) have to be named in a task's scope to be reached. A
+grant scoped to `hr` reaches an hr tool, but not one that's also tagged pii, and it masks the
+pii fields of the ones it does reach. Set `sensitive: [pii, phi]` to add more, or `[]` to turn
+it off. A scope can't be only sensitive tags: a task names a domain too.
+
 `trellisd schema` prints the JSON Schema. See [examples/three-keys](https://github.com/FatherBrian/trellis/tree/main/examples/three-keys).
 
 ## As a library

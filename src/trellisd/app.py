@@ -132,6 +132,11 @@ class Trellis:
         if issued_by != person:
             problems.append(f"only {person} can grant access on their own behalf")
         problems += self._ceiling_problems(agent, scope, actions)
+        if scope and not scope - self.config.sensitive_tags:
+            problems.append(
+                f"the scope names only {', '.join(sorted(scope))}; a task needs a domain too"
+                " (finance, hr, ...), with the sensitive tags it may reach"
+            )
         for tag in sorted(scope):
             if not self._reaches(person, tag, actions[0] if actions else "read"):
                 problems.append(f"{person} can't reach anything tagged {tag}, so can't grant it")
