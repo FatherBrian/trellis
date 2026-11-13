@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
+from reef.lock import Lock, LockError
 from trellisd.app import Trellis
 from trellisd.config import load_config
 from trellisd.db import DEFAULT_URL
@@ -42,6 +45,12 @@ def main() -> None:
     type=int,
     help="Also serve Trellis's token and AuthZEN endpoints on this port, from the same process.",
 )
+@click.option(
+    "--lock",
+    "lock_path",
+    default=None,
+    help="reef.lock to enforce. Default: reef.lock next to the config, if it exists.",
+)
 def serve(
     reef_config: str,
     trellis_config: tuple[str, ...],
@@ -50,6 +59,7 @@ def serve(
     host: str,
     port: int,
     trellis_port: int | None,
+    lock_path: str | None,
 ) -> None:
     """Serve one MCP endpoint (http://HOST:PORT/mcp) in front of the configured servers.
 
@@ -65,10 +75,11 @@ def serve(
     from trellisd.signing import Signer
 
     rc = load_reef_config(reef_config)
+    lock = _load_lock(reef_config, lock_path)
     signer = Signer.load_or_create(key_path) if key_path else None
     config = rc.apply_to(load_config(*trellis_config))
     with Trellis(config, db, signer=signer) as trellis:
-        reef = Reef(trellis, rc)
+        reef = Reef(trellis, rc, lock=lock)
         side = None
         if trellis_port is not None:
             side = TrellisServer(trellis, host, trellis_port)
@@ -151,6 +162,102 @@ def grant(
         except GrantError as exc:
             raise click.ClickException(f"grant refused: {exc}") from exc
     print_issued(issued.grant, issued.token, as_json)
+
+
+def _lock_file(reef_config: str, lock_path: str | None) -> Path:
+    return Path(lock_path) if lock_path else Path(reef_config).with_name("reef.lock")
+
+
+def _load_lock(reef_config: str, lock_path: str | None) -> Lock | None:
+    path = _lock_file(reef_config, lock_path)
+    if not path.exists():
+        if lock_path:
+            raise click.ClickException(f"{path}: no such lock (write one with `reef lock`)")
+        click.echo(
+            f"No {path.name}: tool descriptions aren't pinned. Run `reef lock` to pin them.",
+            err=True,
+        )
+        return None
+    try:
+        lock = Lock.load(path)
+    except LockError as exc:
+        raise click.ClickException(str(exc)) from exc
+    count = sum(len(tools) for tools in lock.servers.values())
+    click.echo(f"Enforcing {path.name}: {count} pinned tools")
+    return lock
+
+
+@main.command("lock")
+@click.option(
+    "--config",
+    "reef_config",
+    default="reef.yaml",
+    show_default=True,
+    help="The servers behind Reef.",
+)
+@click.option("--lock", "lock_path", default=None, help="Default: reef.lock next to the config.")
+@click.option("--check", is_flag=True, help="Exit 1 if any tool differs from the lock (CI).")
+@click.option("--update", is_flag=True, help="Rewrite the lock after reviewing the diff.")
+def lock_command(reef_config: str, lock_path: str | None, check: bool, update: bool) -> None:
+    """Pin each tool's description, schemas and annotations in reef.lock.
+
+    The first run writes the lock. After that, it shows what changed on the servers, and
+    --update rewrites it once you've reviewed the diff. With a lock, `reef serve` hides
+    and refuses any tool that no longer matches.
+    """
+    import asyncio
+    import os
+
+    from reef.config import ReefConfigError, load_reef_config
+    from reef.lock import fetch_catalog
+
+    if check and update:
+        raise click.UsageError("--check and --update don't go together")
+    try:
+        rc = load_reef_config(reef_config)
+        catalog = asyncio.run(fetch_catalog(rc, os.environ))
+    except (ReefConfigError, LockError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    for server, spec in rc.servers.items():
+        offered = {t.name for t in catalog.get(server, [])}
+        for tool in sorted(set(spec.tools) - offered):
+            click.echo(f"Note: reef.yaml maps {server}/{tool}, but {server} doesn't offer it")
+
+    path = _lock_file(reef_config, lock_path)
+    fresh = Lock.from_catalog(catalog)
+    count = sum(len(tools) for tools in fresh.servers.values())
+    if not path.exists():
+        if check:
+            raise click.ClickException(f"{path}: no lock yet (write one with `reef lock`)")
+        fresh.save(path)
+        n = len(fresh.servers)
+        click.echo(f"Wrote {path}: {count} tools across {n} server{'' if n == 1 else 's'}.")
+        click.echo("Review it, and commit it next to reef.yaml.")
+        return
+
+    try:
+        current = Lock.load(path)
+    except LockError as exc:
+        raise click.ClickException(str(exc)) from exc
+    drifts = current.compare(catalog)
+    if not drifts:
+        click.echo(f"{path.name} matches: {count} tools.")
+        return
+    for d in drifts:
+        click.echo(click.style(str(d), fg="yellow", bold=True))
+        if d.diff:
+            for line in d.diff.splitlines():
+                color = "green" if line.startswith("+") else "red" if line.startswith("-") else None
+                click.echo("    " + (click.style(line, fg=color) if color else line))
+    if update:
+        fresh.save(path)
+        click.echo(f"Updated {path}. Review the diff above before you commit it.")
+        return
+    raise click.ClickException(
+        f"{len(drifts)} change(s) since {path.name} was written."
+        " Review them, then run `reef lock --update`."
+    )
 
 
 @main.command()

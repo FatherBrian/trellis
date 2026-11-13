@@ -18,6 +18,10 @@ whole flow is testable in process:
     4. Reef writes the enforcement event, and forwards only once that write succeeds.
     5. It applies the obligations (masks, then the row filter) to the result, and writes
        the outcome before the agent sees it. If that write fails, the result is held back.
+
+With a lock (see ``reef.lock``), a tool is shown and forwarded only while its
+description, schemas and annotations match what was locked. A drifted tool is hidden from
+the list and its calls are refused, before anything reaches the server.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from mcp.shared.exceptions import MCPError
 
 from reef.config import ReefConfig
 from reef.downstream import Downstream, HttpDownstream
+from reef.lock import Lock
 from trellisd.app import Trellis
 from trellisd.enforce import RowFilterError, compile_filter
 from trellisd.engine import MASK, Decision
@@ -64,11 +69,14 @@ class Reef:
         downstream: Callable[[str, str], Downstream] | None = None,
         environ: Mapping[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        lock: Lock | None = None,
     ) -> None:
         """``downstream(server_name, url)`` makes the client for one server (tests pass
-        fakes); ``environ`` holds the brokered credentials."""
+        fakes); ``environ`` holds the brokered credentials; with ``lock``, only tools that
+        match it are shown or called."""
         self.trellis = trellis
         self.config = config
+        self.lock = lock
         self.environ = environ if environ is not None else os.environ
         self.clock = clock
         make = downstream or (lambda _name, url: HttpDownstream(url))
@@ -129,6 +137,7 @@ class Reef:
 
         offered: list[tuple[str, Route, types.Tool]] = []
         unreachable: list[str] = []
+        drifted: list[dict[str, str]] = []
         for server in self.config.servers:
             try:
                 tools = await self._server_tools(server)
@@ -138,8 +147,13 @@ class Reef:
             for tool in tools:
                 name = self.config.tool_name(server, tool.name)
                 route = self.routes.get(name)
-                if route is not None:
-                    offered.append((name, route, tool))
+                if route is None:
+                    continue
+                drift = self.lock.matches(server, tool) if self.lock is not None else None
+                if drift is not None:
+                    drifted.append({"tool": name, "drift": drift.kind})
+                    continue
+                offered.append((name, route, tool))
 
         def decide() -> tuple[list[types.Tool], list[dict[str, Any]]]:
             shown: list[types.Tool] = []
@@ -160,6 +174,8 @@ class Reef:
                     "shown": [t.name for t in shown],
                     "hidden": hidden,
                     "unreachable": unreachable,
+                    **({"drifted": drifted} if drifted else {}),
+                    **({"locked": True} if self.lock is not None else {}),
                     "receipt": grant.receipt,
                     "config_version": self.trellis.config_version,
                 },
@@ -186,6 +202,14 @@ class Reef:
         if not d.allowed:
             await self._enforcement(d, route, "blocked", {"forwarded": False})
             return self._deny(d)
+
+        if self.lock is not None:
+            why = await self._lock_problem(route)
+            if why is not None:
+                await self._enforcement(
+                    d, route, "blocked", {"forwarded": False, "reason": why, "lock": True}
+                )
+                return _error(why, {"event_id": d.event_id, "denied_by": ["lock"]})
 
         spec = self.config.servers[route.server]
         try:
@@ -239,6 +263,26 @@ class Reef:
                 {"event_id": d.event_id, "denied_by": ["ledger"]},
             )
         return enforced
+
+    async def _lock_problem(self, route: Route) -> str | None:
+        """Why the tool can't be called under the lock, or None if it matches."""
+        lock = self.lock
+        if lock is None:
+            return None
+        try:
+            tools = await self._server_tools(route.server)
+        except Exception as exc:
+            return (
+                f"Reef couldn't read {route.server}'s tools to check them against reef.lock"
+                f" ({exc}), so it forwarded nothing"
+            )
+        tool = next((t for t in tools if t.name == route.tool), None)
+        if tool is None:
+            return f"{route.server} no longer offers {route.tool}, so Reef forwarded nothing"
+        drift = lock.matches(route.server, tool)
+        if drift is None:
+            return None
+        return f"{drift}; Reef forwarded nothing until someone reviews it (reef lock --update)"
 
     async def _credential(self, server: str, token: str) -> str | None:
         spec = self.config.servers[server]
