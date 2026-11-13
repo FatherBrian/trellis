@@ -15,6 +15,7 @@ import uvicorn
 from mcp import types
 from mcp.server.lowlevel import Server
 
+from reef import __version__
 from reef.gateway import Reef
 
 
@@ -35,7 +36,7 @@ def mcp_server(reef: Reef) -> Server[Any]:
 
     return Server(
         "reef",
-        version="0.1.0",
+        version=__version__,
         instructions="Reef shows you the tools your Trellis grant allows, and nothing else.",
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,

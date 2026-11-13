@@ -262,7 +262,8 @@ def lock_command(
         fresh.save(path)
         n = len(fresh.servers)
         click.echo(f"Wrote {path}: {count} tools across {n} server{'' if n == 1 else 's'}.")
-        click.echo("Review it, and commit it next to reef.yaml.")
+        where = "your MCP config" if from_client else "reef.yaml"
+        click.echo(f"Review it, and commit it next to {where}.")
         return
 
     try:

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 # Distribution, import and CLI name: trellisd. The project is called Trellis.
 name = "trellisd"
-version = "0.1.0"
+version = "0.1.1"
 description = "Delegated access control and a tamper-evident audit ledger for AI agents."
 readme = "README.md"
 license = "Apache-2.0"

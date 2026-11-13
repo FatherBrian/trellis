@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 # Reef, the tool aggregator: Trellis enforced at the door of your MCP servers.
 name = "reef-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A grant-shaped MCP gateway: agents see and call only what their Trellis grant allows."
 readme = "README.md"
 license = "Apache-2.0"
@@ -25,7 +25,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "trellisd>=0.1.0,<0.2",
+    # 0.1.1: the public names Reef imports (tests/test_reef_surface.py in trellisd).
+    "trellisd>=0.1.1,<0.2",
     "mcp>=2.3,<3",
     "uvicorn>=0.30",
     "anyio>=4",

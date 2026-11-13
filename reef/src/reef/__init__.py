@@ -6,7 +6,14 @@
 ``reef.server`` serves it over MCP; ``reef serve`` and ``reef demo the-door`` are the CLI.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from reef.config import ReefConfig, ReefConfigError, load_reef_config
 from reef.gateway import Reef
 
-__all__ = ["Reef", "ReefConfig", "ReefConfigError", "load_reef_config"]
+try:
+    __version__ = version("reef-mcp")
+except PackageNotFoundError:  # pragma: no cover - running from a checkout without installing
+    __version__ = "0+unknown"
+
+__all__ = ["Reef", "ReefConfig", "ReefConfigError", "__version__", "load_reef_config"]
