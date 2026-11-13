@@ -1,4 +1,4 @@
-"""Reef: Trellis enforced at the door of your MCP servers.
+"""Reef: right-size and pin what your agents can reach over MCP.
 
     from reef import Reef, load_reef_config
     reef = Reef(trellis, load_reef_config("reef.yaml"))

@@ -4,9 +4,10 @@
 
 Trellis gives an AI agent only the data access its current task needs, on behalf of one
 specific person, and records a tamper-evident proof of every decision. It pairs
-delegated attribute-based access control (ABAC) with an append-only access ledger. **Reef** (`reef-mcp`, in [reef/](https://github.com/FatherBrian/trellis/blob/main/reef/README.md)),
-its tool aggregator, puts it at the door of your MCP servers: an agent sees only the tools
-its grant allows, and every call is decided and recorded before it's forwarded. The
+delegated attribute-based access control (ABAC) with an append-only access ledger. **Reef** (`reef-mcp`, in [reef/](https://github.com/FatherBrian/trellis/blob/main/reef/README.md))
+right-sizes and pins what agents can reach over MCP: `reef lock` pins what every tool says,
+and as a gateway it shows each agent only the tools its grant allows, deciding and recording
+every call before it's forwarded. The
 package, import and command are all `trellisd`.
 
 > Status: pre-alpha. v0.1's six milestones work and are tested: grants on Cedar and the
@@ -122,7 +123,7 @@ for check in decision.checks:
     print(check.label, check.allowed, check.policies, check.reason)
 ```
 
-Put Reef in front of your MCP servers ([your own server in three commands](https://github.com/FatherBrian/trellis/blob/main/reef/README.md#your-own-server)), or guard a
+Put Reef in front of your MCP servers ([your own server in three commands](https://github.com/FatherBrian/trellis/blob/main/reef/README.md#your-own-server-behind-the-gateway)), or guard a
 tool inside a server that can't sit behind Reef:
 
 ```python

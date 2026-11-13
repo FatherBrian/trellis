@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 # Reef, the tool aggregator: Trellis enforced at the door of your MCP servers.
 name = "reef-mcp"
 version = "0.1.1"
-description = "A grant-shaped MCP gateway: agents see and call only what their Trellis grant allows."
+description = "Right-size and pin what your AI agents can reach over MCP: a tool lockfile, and a gateway that shows each agent only what its grant allows."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]

@@ -15,7 +15,11 @@ from trellisd.db import DEFAULT_URL
 @click.group()
 @click.version_option(package_name="reef-mcp", message="reef %(version)s")
 def main() -> None:
-    """Reef: Trellis enforced at the door of your MCP servers."""
+    """Reef: right-size and pin what your agents can reach over MCP.
+
+    `reef lock` pins what every tool says; `reef serve` is the gateway that shows each agent
+    only the tools its Trellis grant allows.
+    """
 
 
 @main.command()
