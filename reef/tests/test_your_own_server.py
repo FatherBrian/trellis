@@ -71,7 +71,7 @@ def test_the_guide_works(tmp_path: Path) -> None:
             result = agent.call("hr_payroll", {})
             rows = json.loads(result.content[0].text)["rows"]  # type: ignore[union-attr]
             assert rows
-            assert {r["salary"] for r in rows} == {"***"}  # pii, and the grant covers only hr
+            assert {r["salary"] for r in rows} == {"***"}  # pii, and my-bot's ceiling has no pii
             assert all(r["employee"] != "***" for r in rows)
 
 

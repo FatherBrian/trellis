@@ -145,6 +145,7 @@ trellisd ledger export [--console]   # OpenTelemetry spans from the outbox
 trellisd contracts list | import-odcs FILE
 trellisd catalog tags TABLE          # merged tags, each with its source
 trellisd serve [--port 8180]         # AuthZEN evaluation and sign-in token exchange
+trellisd report [--since 90d]        # who let which agent do what, for an access review
 ```
 
 `--config` (or `TRELLISD_CONFIG`) is a YAML file or directory; `--db` (or `TRELLISD_DB`)
@@ -183,6 +184,12 @@ examples/idp         a Keycloak demo realm (M4)
 quickstart/          docker compose up: the whole story (M6)
 demo/                one note per milestone demo
 ```
+
+## Design notes
+
+- [Threat model](https://github.com/FatherBrian/trellis/blob/main/docs/threat-model.md): what Trellis protects against, and what it doesn't.
+- [Enforcement and identity](https://github.com/FatherBrian/trellis/blob/main/docs/design/enforcement-and-identity.md): what asks Trellis for decisions, and reading groups from Entra and Okta.
+- [Task templates experiment](https://github.com/FatherBrian/trellis/blob/main/docs/experiments/task-templates/README.md): can a task be narrow and still let the work through?
 
 ## Contributing
 

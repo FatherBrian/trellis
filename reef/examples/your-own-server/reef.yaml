@@ -14,4 +14,4 @@ reef:
         headcount: {action: read}
         payroll:
           action: read
-          elements: {salary: [pii]}    # masked unless a grant covers pii
+          elements: {salary: [pii]}    # masked: my-bot's ceiling has no pii

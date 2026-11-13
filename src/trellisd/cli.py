@@ -1336,6 +1336,52 @@ def print_table(rows: list[list[str]], indent: int = 0, center: bool = True) -> 
     _table(rows, indent, center)
 
 
+# -- the access report -----------------------------------------------------------------------
+
+
+@main.command()
+@db_option
+@click.option(
+    "--since",
+    default="90d",
+    show_default=True,
+    help="How far back: 30d, 12w, 24h. 'all' for everything.",
+)
+@click.option(
+    "--format", "fmt", type=click.Choice(["csv", "json"]), default="csv", show_default=True
+)
+@click.option("--out", type=click.Path(dir_okay=False), help="Write it to this file.")
+def report(db_url: str, since: str, fmt: str, out: str | None) -> None:
+    """Who let which agent do what, for whom: one row per grant and resource.
+
+    Built for an access review. It lists every grant issued or used in the period, who
+    allowed it, the task, and each resource the agent reached with allowed and denied
+    counts. It checks the ledger first and says so, so the report can be trusted as far as
+    the ledger can.
+    """
+    from trellisd.report import build, to_csv, to_json
+
+    window = None if since == "all" else utcnow() - parse_duration(since)
+    led = _ledger(db_url)
+    v = led.verify()
+    reports = build(led, window)
+    led.db.close()
+    verified = {"ok": v.ok, "events_checked": v.checked, "problems": list(v.problems)}
+    text = to_json(reports, verified) if fmt == "json" else to_csv(reports)
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+    else:
+        click.echo(text, nl=False)
+    state = (
+        f"{YES} ledger intact ({v.checked} events)"
+        if v.ok
+        else f"{NO} the ledger fails verification"
+    )
+    click.echo(f"{state}; {len(reports)} grants" + (f", written to {out}" if out else ""), err=True)
+    if not v.ok:
+        sys.exit(1)
+
+
 # -- helpers ---------------------------------------------------------------------------------
 
 

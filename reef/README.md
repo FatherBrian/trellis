@@ -37,7 +37,7 @@ reef:
         headcount: {action: read}
         payroll:
           action: read
-          elements: {salary: [pii]}    # masked unless a grant covers pii
+          elements: {salary: [pii]}    # masked: my-bot's ceiling has no pii
 ```
 
 `trellis.yaml` names the agent and the most it may ever touch:
@@ -68,7 +68,7 @@ reef serve --trellis trellis.yaml
 
 Point the agent's MCP client at `http://127.0.0.1:8190/mcp` with the header
 `Authorization: Bearer <the token>`. It sees `hr_headcount` and `hr_payroll`. On
-`hr_payroll`, `salary` comes back as `***`: it's pii, and the grant covers only hr.
+`hr_payroll`, `salary` comes back as `***`: it's pii, and my-bot's ceiling doesn't include pii.
 `trellisd trace --db sqlite:///trellisd.db` shows every list and call.
 
 From here, add servers to `reef.yaml`, and add people and groups when more than you use
