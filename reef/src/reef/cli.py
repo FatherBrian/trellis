@@ -218,7 +218,7 @@ def _load_lock(reef_config: str, lock_path: str | None) -> Lock | None:
 def lock_command(
     reef_config: str, from_client: str | None, lock_path: str | None, check: bool, update: bool
 ) -> None:
-    """Pin each tool's description, schemas and annotations in reef.lock.
+    """Pin each tool's description, schemas, annotations and MCP Apps view in reef.lock.
 
     The first run writes the lock. After that, it shows what changed on the servers, and
     --update rewrites it once you've reviewed the diff. With a lock, `reef serve` hides
@@ -233,7 +233,7 @@ def lock_command(
 
     from reef.clients import ClientConfigError, load_client_config
     from reef.config import ReefConfigError, load_reef_config
-    from reef.lock import fetch_catalog
+    from reef.lock import fetch_catalog, fetch_views
 
     if check and update:
         raise click.UsageError("--check and --update don't go together")
@@ -249,6 +249,7 @@ def lock_command(
         else:
             rc = load_reef_config(reef_config)
         catalog = asyncio.run(fetch_catalog(rc, os.environ, every_tool=bool(from_client)))
+        views = asyncio.run(fetch_views(rc, os.environ, catalog))
     except (ReefConfigError, LockError, ClientConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -258,7 +259,7 @@ def lock_command(
             click.echo(f"Note: reef.yaml maps {server}/{tool}, but {server} doesn't offer it")
 
     path = Path(lock_path or "reef.lock") if from_client else _lock_file(reef_config, lock_path)
-    fresh = Lock.from_catalog(catalog)
+    fresh = Lock.from_catalog(catalog, views)
     count = sum(len(tools) for tools in fresh.servers.values())
     if not path.exists():
         if check:
@@ -274,7 +275,7 @@ def lock_command(
         current = Lock.load(path)
     except LockError as exc:
         raise click.ClickException(str(exc)) from exc
-    drifts = current.compare(catalog)
+    drifts = current.compare(catalog, views)
     if not drifts:
         click.echo(f"{path.name} matches: {count} tools.")
         return

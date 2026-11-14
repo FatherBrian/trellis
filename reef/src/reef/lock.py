@@ -14,10 +14,17 @@ appears. Both are recorded in the ledger. Review a lock change like a code chang
 
 Pinned per tool: ``title``, ``description``, ``inputSchema``, ``outputSchema`` and
 ``annotations``, which is everything the model reads or that changes what a call does.
+
+A tool with an MCP Apps view (``_meta.ui.resourceUri``, a ``ui://`` resource the host renders)
+also pins ``_meta.ui`` (as ``ui``) and the view's contents (as ``view``: its mimeType and a
+sha256 of the HTML). The view is code that runs in the user's host, so a swapped view is drift
+like a rewritten description. Views are read when the lock is written or checked, and by
+``reef serve`` when it refreshes a server's tools.
 """
 
 from __future__ import annotations
 
+import base64
 import difflib
 import hashlib
 import json
@@ -36,6 +43,14 @@ if TYPE_CHECKING:
 
 LOCK_VERSION = 1
 PINNED = ("title", "description", "inputSchema", "outputSchema", "annotations")
+#: Pinned only when a tool has an MCP Apps view, so locks written before views still match.
+PINNED_VIEW = ("ui", "view")
+ALL_PINNED = PINNED + PINNED_VIEW
+
+#: server -> view uri -> {"mimeType", "sha256"} (or {"error"} if it couldn't be read)
+Views = Mapping[str, Mapping[str, dict[str, Any]]]
+#: "Don't check views": matching then takes the locked view as given.
+UNCHECKED: Any = object()
 
 HEADER = """\
 # reef.lock: what each tool said when it was reviewed. Written by `reef lock`.
@@ -47,15 +62,42 @@ class LockError(ValueError):
     pass
 
 
-def pinned(tool: types.Tool) -> dict[str, Any]:
-    """The parts of a tool the lock pins, as plain JSON."""
+def view_uri(tool: types.Tool) -> str | None:
+    """The ui:// resource a tool's MCP Apps view lives at, if it has one."""
+    ui = (tool.meta or {}).get("ui")
+    uri = ui.get("resourceUri") if isinstance(ui, dict) else None
+    return uri if isinstance(uri, str) and uri else None
+
+
+def pinned(tool: types.Tool, view: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The parts of a tool the lock pins, as plain JSON. ``view`` is its view's digest."""
     dumped = tool.model_dump(mode="json", by_alias=True, exclude_none=True)
-    return {k: dumped[k] for k in PINNED if k in dumped}
+    entry = {k: dumped[k] for k in PINNED if k in dumped}
+    ui = (dumped.get("_meta") or {}).get("ui")
+    if ui is not None:
+        entry["ui"] = ui
+    if view is not None:
+        entry["view"] = view
+    return entry
+
+
+def view_digest(contents: list[Any]) -> dict[str, Any]:
+    """A resource's mimeType and sha256 of its contents (text as UTF-8, blobs decoded)."""
+    h = hashlib.sha256()
+    mime = None
+    for c in contents:
+        mime = mime or getattr(c, "mime_type", None)
+        text = getattr(c, "text", None)
+        if text is not None:
+            h.update(text.encode("utf-8"))
+        else:
+            h.update(base64.b64decode(getattr(c, "blob", "") or ""))
+    return {"mimeType": mime or "", "sha256": "sha256:" + h.hexdigest()}
 
 
 def digest(entry: Mapping[str, Any]) -> str:
     """sha256 of the pinned fields in canonical JSON (sorted keys, no whitespace)."""
-    body = {k: entry[k] for k in PINNED if k in entry}
+    body = {k: entry[k] for k in ALL_PINNED if k in entry}
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -85,12 +127,16 @@ class Lock:
     servers: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
     @classmethod
-    def from_catalog(cls, catalog: Mapping[str, list[types.Tool]]) -> Lock:
+    def from_catalog(
+        cls, catalog: Mapping[str, list[types.Tool]], views: Views | None = None
+    ) -> Lock:
         lock = cls()
         for server, tools in sorted(catalog.items()):
             entries: dict[str, dict[str, Any]] = {}
             for tool in sorted(tools, key=lambda t: t.name):
-                entry = pinned(tool)
+                uri = view_uri(tool)
+                view = (views or {}).get(server, {}).get(uri) if uri else None
+                entry = pinned(tool, view)
                 entries[tool.name] = {"sha256": digest(entry), **entry}
             lock.servers[server] = entries
         return lock
@@ -134,17 +180,34 @@ class Lock:
 
     # -- checking --------------------------------------------------------------------------
 
-    def matches(self, server: str, tool: types.Tool) -> Drift | None:
-        """None if the tool is exactly as locked; otherwise how it differs."""
+    def matches(self, server: str, tool: types.Tool, views: Views = UNCHECKED) -> Drift | None:
+        """None if the tool is exactly as locked; otherwise how it differs.
+
+        ``views`` are the views as read now (see fetch_views). Left out, the view's contents
+        aren't checked (its address still is, through ``ui``).
+        """
         locked = self.servers.get(server, {}).get(tool.name)
         if locked is None:
             return Drift(server, tool.name, "added")
-        now = pinned(tool)
+        uri = view_uri(tool)
+        if not uri:
+            view = None
+        elif views is UNCHECKED:
+            view = locked.get("view")
+        else:
+            view = views.get(server, {}).get(uri) or {"error": f"{uri} wasn't read"}
+        now = pinned(tool, view)
         if digest(now) == locked["sha256"]:
             return None
         return Drift(server, tool.name, "changed", _diff(locked, now))
 
-    def compare(self, catalog: Mapping[str, list[types.Tool]]) -> list[Drift]:
+    def needs_views(self, server: str) -> bool:
+        """Whether any tool of this server has a pinned view to check."""
+        return any("view" in e for e in self.servers.get(server, {}).values())
+
+    def compare(
+        self, catalog: Mapping[str, list[types.Tool]], views: Views = UNCHECKED
+    ) -> list[Drift]:
         """Every difference between this lock and what the servers offer now."""
         drifts: list[Drift] = []
         for server in sorted(set(self.servers) | set(catalog)):
@@ -153,7 +216,7 @@ class Lock:
                 if name not in offered:
                     drifts.append(Drift(server, name, "removed"))
                     continue
-                d = self.matches(server, offered[name])
+                d = self.matches(server, offered[name], views)
                 if d is not None:
                     drifts.append(d)
         return drifts
@@ -186,9 +249,49 @@ async def fetch_catalog(
     return catalog
 
 
+async def read_views(
+    client: Downstream, credential: str | None, tools: list[types.Tool], *, strict: bool
+) -> dict[str, dict[str, Any]]:
+    """Read and digest the ui:// views these tools name. Unreadable: an error, or (strict)
+    a LockError."""
+    out: dict[str, dict[str, Any]] = {}
+    for uri in sorted({u for t in tools if (u := view_uri(t)) and u.startswith("ui://")}):
+        try:
+            out[uri] = view_digest(await client.read_resource(uri, credential))
+        except Exception as exc:
+            if strict:
+                raise LockError(f"couldn't read the view {uri}: {exc}") from exc
+            out[uri] = {"error": f"couldn't read it: {exc}"[:200]}
+    return out
+
+
+async def fetch_views(
+    config: ReefConfig,
+    environ: Mapping[str, str],
+    catalog: Mapping[str, list[types.Tool]],
+    make: Callable[[str, str], Downstream] | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """The MCP Apps views the catalog's tools name, read now and digested. A view that
+    can't be read is an error, like an unreachable server."""
+    views: dict[str, dict[str, dict[str, Any]]] = {}
+    for server, tools in catalog.items():
+        if not any(view_uri(t) for t in tools):
+            continue
+        spec = config.servers[server]
+        env = spec.credential_env if spec.credential == "brokered" else spec.list_credential_env
+        try:
+            client = make(server, spec.where) if make else downstream_for(spec, environ)
+        except ExpansionError as exc:
+            raise LockError(f"{server}: {exc}") from exc
+        views[server] = await read_views(
+            client, environ.get(env) if env else None, tools, strict=True
+        )
+    return views
+
+
 def _diff(locked: Mapping[str, Any], now: Mapping[str, Any]) -> str:
     def lines(entry: Mapping[str, Any]) -> list[str]:
-        body = {k: entry[k] for k in PINNED if k in entry}
+        body = {k: entry[k] for k in ALL_PINNED if k in entry}
         text = yaml.safe_dump(body, sort_keys=True, allow_unicode=True, width=100)
         return text.splitlines(keepends=True)
 

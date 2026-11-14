@@ -5,8 +5,8 @@
 To *reef* a sail is to shrink it to the weather. Reef does that for AI agents: each agent
 gets only the MCP tools its task needs, and nothing it reads can change without review.
 
-- **Pin:** `reef lock` records what every tool says, its description, schemas and
-  annotations, and fails CI when a server changes them. A changed description is a changed
+- **Pin:** `reef lock` records what every tool says, its description, schemas,
+  annotations and MCP Apps view, and fails CI when a server changes them. A changed description is a changed
   instruction to your model, and nothing in MCP pins it. Works on any MCP setup.
 - **Right-size:** run Reef as the gateway in front of your MCP servers and each agent sees
   only the tools its [Trellis](https://github.com/FatherBrian/trellis) grant allows. Every
@@ -41,6 +41,17 @@ Without `--from`, it locks the servers in `reef.yaml`, the gateway's config (bel
 `reef.lock` holds each tool's `title`, `description`, `inputSchema`, `outputSchema` and
 `annotations` in readable YAML, with a sha256 of each. Commit it next to `reef.yaml`, and
 review a change to it like a change to code.
+
+**MCP Apps views are pinned too.** A tool can name an interactive view in `_meta.ui.resourceUri`:
+a `ui://` resource of HTML and script that the host renders for the user. That's code running
+in front of your user, so `reef lock` pins the tool's `_meta.ui` and reads each view to pin its
+`mimeType` and a sha256 of its contents. A swapped view address or changed view HTML is drift,
+like a rewritten description: `--check` fails, and `reef serve` reads the views whenever it
+refreshes a server's tools and hides the tool if its view changed or can't be read. Other
+`_meta` stays unpinned. Tools without a view pin exactly what they did before, so existing
+locks still match; a tool that *gains* a view shows up as drift until you review and
+`--update`. (The gateway passes the view's address through to your client but doesn't proxy
+`resources/read` yet, so a host connected only through Reef can't load the view itself.)
 
 With a `reef.lock` next to `reef.yaml` (or `reef serve --lock PATH`), Reef shows a tool only
 while it matches. A tool that drifted is hidden from the list and refused if an agent calls

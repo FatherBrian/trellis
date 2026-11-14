@@ -29,6 +29,10 @@ class Downstream(Protocol):
         meta: dict[str, Any],
     ) -> types.CallToolResult: ...
 
+    async def read_resource(
+        self, uri: str, credential: str | None
+    ) -> list[types.TextResourceContents | types.BlobResourceContents]: ...
+
 
 async def _all_tools(client: Client) -> list[types.Tool]:
     tools: list[types.Tool] = []
@@ -72,6 +76,12 @@ class HttpDownstream:
         async with self._client(credential) as client:
             return await client.call_tool(name, arguments, meta=cast(types.RequestParamsMeta, meta))
 
+    async def read_resource(
+        self, uri: str, credential: str | None
+    ) -> list[types.TextResourceContents | types.BlobResourceContents]:
+        async with self._client(credential) as client:
+            return list((await client.read_resource(uri)).contents)
+
 
 class StdioDownstream:
     """A local MCP server Reef starts as a process and talks to over stdin and stdout.
@@ -104,6 +114,12 @@ class StdioDownstream:
     ) -> types.CallToolResult:
         async with Client(self.params) as client:
             return await client.call_tool(name, arguments, meta=cast(types.RequestParamsMeta, meta))
+
+    async def read_resource(
+        self, uri: str, credential: str | None
+    ) -> list[types.TextResourceContents | types.BlobResourceContents]:
+        async with Client(self.params) as client:
+            return list((await client.read_resource(uri)).contents)
 
 
 _VAR = re.compile(r"\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}")

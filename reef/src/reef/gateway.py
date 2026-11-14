@@ -40,7 +40,7 @@ from mcp.shared.exceptions import MCPError
 
 from reef.config import ReefConfig
 from reef.downstream import Downstream, downstream_for
-from reef.lock import Lock
+from reef.lock import UNCHECKED, Lock, read_views
 from trellisd.app import Trellis
 from trellisd.enforce import RowFilterError, compile_filter
 from trellisd.engine import MASK, Decision
@@ -92,7 +92,8 @@ class Reef:
             for server, spec in config.servers.items()
             for tool, t in spec.tools.items()
         }
-        self._catalog: dict[str, tuple[float, list[types.Tool]]] = {}
+        # server -> (when, tools, views read with them or UNCHECKED)
+        self._catalog: dict[str, tuple[float, list[types.Tool], Any]] = {}
         # Trellis is synchronous and its ledger serializes writes anyway.
         self._lock = threading.Lock()
 
@@ -106,15 +107,30 @@ class Reef:
     # -- the tool list ---------------------------------------------------------------------
 
     async def _server_tools(self, server: str) -> list[types.Tool]:
-        """A server's tool catalog (names, descriptions, schemas), cached for a while."""
+        """A server's tool catalog (names, descriptions, schemas), cached for a while.
+
+        With a lock that pins views, the views are read and digested at the same time, so a
+        swapped view is caught on the next refresh. One that can't be read counts as drift.
+        """
         cached = self._catalog.get(server)
         if cached is not None and self.clock() - cached[0] < self.config.catalog_ttl_seconds:
             return cached[1]
         spec = self.config.servers[server]
         env = spec.credential_env if spec.credential == "brokered" else spec.list_credential_env
-        tools = await self.servers[server].list_tools(self.environ.get(env) if env else None)
-        self._catalog[server] = (self.clock(), tools)
+        credential = self.environ.get(env) if env else None
+        tools = await self.servers[server].list_tools(credential)
+        views: Any = UNCHECKED
+        if self.lock is not None and self.lock.needs_views(server):
+            views = {
+                server: await read_views(self.servers[server], credential, tools, strict=False)
+            }
+        self._catalog[server] = (self.clock(), tools, views)
         return tools
+
+    def _views(self, server: str) -> Any:
+        """The views read with the server's current catalog, or UNCHECKED."""
+        cached = self._catalog.get(server)
+        return cached[2] if cached is not None else UNCHECKED
 
     def forget_catalog(self, server: str | None = None) -> None:
         if server is None:
@@ -151,7 +167,11 @@ class Reef:
                 route = self.routes.get(name)
                 if route is None:
                     continue
-                drift = self.lock.matches(server, tool) if self.lock is not None else None
+                drift = (
+                    self.lock.matches(server, tool, self._views(server))
+                    if self.lock is not None
+                    else None
+                )
                 if drift is not None:
                     drifted.append({"tool": name, "drift": drift.kind})
                     continue
@@ -281,7 +301,7 @@ class Reef:
         tool = next((t for t in tools if t.name == route.tool), None)
         if tool is None:
             return f"{route.server} no longer offers {route.tool}, so Reef forwarded nothing"
-        drift = lock.matches(route.server, tool)
+        drift = lock.matches(route.server, tool, self._views(route.server))
         if drift is None:
             return None
         return f"{drift}; Reef forwarded nothing until someone reviews it (reef lock --update)"
